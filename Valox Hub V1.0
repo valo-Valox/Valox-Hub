@@ -1,6 +1,4 @@
--- Full fixed script
--- Single UI, no duplicates. Works with Solara and common executors.
--- Features: Rayfield UI, aimbot (head/torso), FOV circle (show/hide), ESP (BoxHandleAdornment), player WS/JP/infjump, anti-afk, unload
+-- Works with Solara and common executors.
 
 -- ======= Cleanup previous runs =======
 if getgenv().Rayfield and type(getgenv().Rayfield.Destroy) == "function" then
@@ -40,7 +38,7 @@ getgenv().AimbotSettings = getgenv().AimbotSettings or {
 }
 
 getgenv().CircleSettings = getgenv().CircleSettings or {
-    FOV = 150,
+    FOV = 120,
     Color = Color3.fromRGB(255,255,255),
     Rainbow = false,
     Thickness = 2,
@@ -130,10 +128,10 @@ getgenv().Rayfield = Rayfield
 
 -- ======= UI =======
 local Window = Rayfield:CreateWindow({
-    Name = "Custom Cheat Hub",
-    LoadingTitle = "Cheat Hub Loading",
-    LoadingSubtitle = "by Val",
-    ConfigurationSaving = { Enabled = true, FolderName = "CheatHub", FileName = "Settings" },
+    Name = "Valox Hub",
+    LoadingTitle = "Valox Hub Loading",
+    LoadingSubtitle = "by Valox",
+    ConfigurationSaving = { Enabled = true, FolderName = "ValoxHub", FileName = "Settings" },
     KeySystem = false
 })
 
@@ -185,7 +183,7 @@ CircleTab:CreateSection("Circle")
 local FOVSlider = CircleTab:CreateSlider({
     Name = "FOV",
     Range = {50,500},
-    Increment = 1,
+    Increment = 10,
     CurrentValue = getgenv().CircleSettings.FOV,
     Callback = function(v) getgenv().CircleSettings.FOV = v end
 })
