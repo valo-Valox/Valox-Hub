@@ -1,12 +1,16 @@
--- ======= Cleanup previous instances =======
+-- Full fixed script
+-- Single UI, no duplicates. Works with Solara and common executors.
+-- Features: Rayfield UI, aimbot (head/torso), FOV circle (show/hide), ESP (BoxHandleAdornment), player WS/JP/infjump, anti-afk, unload
+
+-- ======= Cleanup previous runs =======
 if getgenv().Rayfield and type(getgenv().Rayfield.Destroy) == "function" then
     pcall(function() getgenv().Rayfield:Destroy() end)
 end
 getgenv().Rayfield = nil
 
 if getgenv().Connections then
-    for _, conn in pairs(getgenv().Connections) do
-        pcall(function() conn:Disconnect() end)
+    for _, c in pairs(getgenv().Connections) do
+        pcall(function() c:Disconnect() end)
     end
 end
 getgenv().Connections = {}
@@ -18,337 +22,517 @@ if getgenv().ActiveCircles then
 end
 getgenv().ActiveCircles = {}
 
--- ======= Settings =======
+if getgenv().ESPBoxes then
+    for _, b in pairs(getgenv().ESPBoxes) do
+        pcall(function() if b and b.Destroy then b:Destroy() end end)
+    end
+end
+getgenv().ESPBoxes = {}
+
+-- ======= Defaults =======
 getgenv().AimbotSettings = getgenv().AimbotSettings or {
-    Enabled=false,
-    TargetPart="Head",
-    Smoothing=0,
-    Prediction=0,
-    TeamCheck=false,
-    Mode="Hold"
+    Enabled = false,
+    Mode = "Hold",
+    TeamCheck = false,
+    Prediction = "Off",
+    Smoothing = "Off",
+    TargetPart = "Head"
 }
 
 getgenv().CircleSettings = getgenv().CircleSettings or {
-    FOV=150,
-    Color=Color3.fromRGB(255,255,255),
-    Rainbow=false,
-    Thickness=2,
-    Show=true,
-    RainbowSpeed=5
+    FOV = 150,
+    Color = Color3.fromRGB(255,255,255),
+    Rainbow = false,
+    Thickness = 2,
+    RainbowSpeed = 5,
+    Visible = true
 }
 
 getgenv().ESPSettings = getgenv().ESPSettings or {
-    Enabled=false,
-    Color=Color3.fromRGB(255,0,0),
-    MaxDistance=500
+    Enabled = false,
+    Color = Color3.fromRGB(255,0,0),
+    MaxDistance = 500
 }
 
 getgenv().PlayerSettings = getgenv().PlayerSettings or {
-    WalkspeedEnabled=false,
-    Walkspeed=16,
-    JumpPowerEnabled=false,
-    JumpPower=50,
-    InfiniteJump=false
+    WalkspeedEnabled = false,
+    Walkspeed = 16,
+    JumpPowerEnabled = false,
+    JumpPower = 50,
+    InfiniteJump = false
 }
 
 getgenv().MiscSettings = getgenv().MiscSettings or {
-    Theme="Default"
+    AntiAFK = false
 }
+
+-- ======= Services =======
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local VirtualUser = game:GetService("VirtualUser")
+
+-- runtime tables
+getgenv().ActiveCircles = getgenv().ActiveCircles or {}
+getgenv().ESPBoxes = getgenv().ESPBoxes or {}
+getgenv().Connections = getgenv().Connections or {}
 
 -- ======= Helpers =======
 local function DestroyAllCircles()
-    if getgenv().ActiveCircles then
-        for _, c in pairs(getgenv().ActiveCircles) do
-            pcall(function() if c and c.Remove then c:Remove() end end)
-        end
+    for _, c in pairs(getgenv().ActiveCircles) do
+        pcall(function() if c and c.Remove then c:Remove() end end)
     end
     getgenv().ActiveCircles = {}
 end
 
+local function ClearESPBoxes()
+    for plr, box in pairs(getgenv().ESPBoxes) do
+        pcall(function() if box and box.Destroy then box:Destroy() end end)
+        getgenv().ESPBoxes[plr] = nil
+    end
+end
+
 local function UnloadAll()
     DestroyAllCircles()
+    ClearESPBoxes()
+    for _, conn in pairs(getgenv().Connections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    getgenv().Connections = {}
     if getgenv().Rayfield and type(getgenv().Rayfield.Destroy) == "function" then
         pcall(function() getgenv().Rayfield:Destroy() end)
     end
     getgenv().Rayfield = nil
-    if getgenv().Connections then
-        for _, conn in pairs(getgenv().Connections) do
-            pcall(function() conn:Disconnect() end)
-        end
-    end
-    getgenv().Connections = {}
-    getgenv().AimbotSettings.Enabled = false
-    getgenv().ESPSettings.Enabled = false
     getgenv().ScriptLoaded = false
 end
 
-getgenv().ScriptLoaded=true
+local function getAimPartFromName(character, name)
+    if not character then return nil end
+    if name == "Head" then
+        return character:FindFirstChild("Head")
+    else
+        -- Torso target: prefer HumanoidRootPart, fallback to UpperTorso or Torso
+        return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso") or character:FindFirstChild("LowerTorso")
+    end
+end
 
 -- ======= Load Rayfield =======
 local ok, Rayfield = pcall(function()
-    return loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+    return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 end)
 if not ok or not Rayfield then
-    warn("Rayfield load failed")
+    warn("Rayfield failed to load")
     return
 end
 getgenv().Rayfield = Rayfield
 
--- ======= Services =======
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
-
--- ======= Window & Tabs =======
+-- ======= UI =======
 local Window = Rayfield:CreateWindow({
-    Name="Custom Cheat Hub",
-    LoadingTitle="Cheat Hub Loading",
-    LoadingSubtitle="by Val",
-    ConfigurationSaving={Enabled=true, FolderName="CheatHub", FileName="Settings"},
-    Discord={Enabled=false},
-    KeySystem=false,
-    Theme=getgenv().MiscSettings.Theme -- Initial theme
+    Name = "Custom Cheat Hub",
+    LoadingTitle = "Cheat Hub Loading",
+    LoadingSubtitle = "by Val",
+    ConfigurationSaving = { Enabled = true, FolderName = "CheatHub", FileName = "Settings" },
+    KeySystem = false
 })
 
-local AimbotTab = Window:CreateTab("Aimbot","target")
-local CircleTab = Window:CreateTab("Circle","circle")
-local ESPTab = Window:CreateTab("ESP","eye")
-local PlayerTab = Window:CreateTab("Player","user")
-local MiscTab = Window:CreateTab("Misc","settings")
+local AimbotTab = Window:CreateTab("Aimbot", "target")
+local CircleTab  = Window:CreateTab("Circle", "circle")
+local ESPTab     = Window:CreateTab("ESP", "eye")
+local PlayerTab  = Window:CreateTab("Player", "user")
+local MiscTab    = Window:CreateTab("Misc", "settings")
 
--- ======= Player Tab =======
-PlayerTab:CreateSection("Player Settings")
--- Walkspeed
-PlayerTab:CreateToggle({
-    Name="Enable Walkspeed",
-    CurrentValue=getgenv().PlayerSettings.WalkspeedEnabled,
-    Callback=function(v)
-        getgenv().PlayerSettings.WalkspeedEnabled=v
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-            pcall(function()
-                LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = v and getgenv().PlayerSettings.Walkspeed or 16
-            end)
+-- ======= Aimbot UI (single set) =======
+AimbotTab:CreateSection("Aimbot")
+local AimbotToggle = AimbotTab:CreateToggle({
+    Name = "Enable Aimbot",
+    CurrentValue = getgenv().AimbotSettings.Enabled,
+    Callback = function(v) getgenv().AimbotSettings.Enabled = v end
+})
+local TeamToggle = AimbotTab:CreateToggle({
+    Name = "Team Check",
+    CurrentValue = getgenv().AimbotSettings.TeamCheck,
+    Callback = function(v) getgenv().AimbotSettings.TeamCheck = v end
+})
+local PredictionDropdown = AimbotTab:CreateDropdown({
+    Name = "Prediction",
+    Options = {"Off","Low","Medium","High"},
+    CurrentOption = {getgenv().AimbotSettings.Prediction},
+    Callback = function(opt) getgenv().AimbotSettings.Prediction = opt[1] end
+})
+local SmoothingDropdown = AimbotTab:CreateDropdown({
+    Name = "Smoothing",
+    Options = {"Off","Low","Medium","High"},
+    CurrentOption = {getgenv().AimbotSettings.Smoothing},
+    Callback = function(opt) getgenv().AimbotSettings.Smoothing = opt[1] end
+})
+local ModeDropdown = AimbotTab:CreateDropdown({
+    Name = "Toggle Mode",
+    Options = {"Hold","Toggle"},
+    CurrentOption = {getgenv().AimbotSettings.Mode},
+    Callback = function(opt) getgenv().AimbotSettings.Mode = opt[1] end
+})
+local TargetDropdown = AimbotTab:CreateDropdown({
+    Name = "Target Part",
+    Options = {"Head","Torso"},
+    CurrentOption = {getgenv().AimbotSettings.TargetPart},
+    Callback = function(opt) getgenv().AimbotSettings.TargetPart = opt[1] end
+})
+
+-- ======= Circle UI =======
+CircleTab:CreateSection("Circle")
+local FOVSlider = CircleTab:CreateSlider({
+    Name = "FOV",
+    Range = {50,500},
+    Increment = 1,
+    CurrentValue = getgenv().CircleSettings.FOV,
+    Callback = function(v) getgenv().CircleSettings.FOV = v end
+})
+local CircleColorPicker = CircleTab:CreateColorPicker({
+    Name = "Circle Color",
+    Color = getgenv().CircleSettings.Color,
+    Callback = function(v) getgenv().CircleSettings.Color = v end
+})
+local RainbowToggle = CircleTab:CreateToggle({
+    Name = "Rainbow Circle",
+    CurrentValue = getgenv().CircleSettings.Rainbow,
+    Callback = function(v) getgenv().CircleSettings.Rainbow = v end
+})
+local ThicknessSlider = CircleTab:CreateSlider({
+    Name = "Thickness",
+    Range = {1,10},
+    Increment = 1,
+    CurrentValue = getgenv().CircleSettings.Thickness,
+    Callback = function(v) getgenv().CircleSettings.Thickness = v end
+})
+local ShowCircleToggle = CircleTab:CreateToggle({
+    Name = "Show Circle",
+    CurrentValue = getgenv().CircleSettings.Visible,
+    Callback = function(v)
+        getgenv().CircleSettings.Visible = v
+        if mainCircle then pcall(function() mainCircle.Visible = v end) end
+    end
+})
+
+-- ======= ESP UI =======
+ESPTab:CreateSection("ESP")
+local ESPToggle = ESPTab:CreateToggle({
+    Name = "Enable ESP",
+    CurrentValue = getgenv().ESPSettings.Enabled,
+    Callback = function(v)
+        getgenv().ESPSettings.Enabled = v
+        if not v then ClearESPBoxes() end
+    end
+})
+local ESPColorPicker = ESPTab:CreateColorPicker({
+    Name = "ESP Color",
+    Color = getgenv().ESPSettings.Color,
+    Callback = function(v)
+        getgenv().ESPSettings.Color = v
+        for _, b in pairs(getgenv().ESPBoxes) do
+            pcall(function() b.Color3 = v end)
         end
     end
 })
-local wsSlider = PlayerTab:CreateSlider({
-    Name="Walkspeed",
-    Range={5,100},
-    Increment=1,
-    CurrentValue=getgenv().PlayerSettings.Walkspeed,
-    Callback=function(v)
-        getgenv().PlayerSettings.Walkspeed=v
-        if getgenv().PlayerSettings.WalkspeedEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-            pcall(function()
-                LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed=v
-            end)
-        end
-    end
+local ESPRangeSlider = ESPTab:CreateSlider({
+    Name = "Max Distance",
+    Range = {50,2000},
+    Increment = 50,
+    CurrentValue = getgenv().ESPSettings.MaxDistance,
+    Callback = function(v) getgenv().ESPSettings.MaxDistance = v end
+})
+
+-- ======= Player UI =======
+PlayerTab:CreateSection("Player")
+local WS_Toggle = PlayerTab:CreateToggle({
+    Name = "Enable Walkspeed",
+    CurrentValue = getgenv().PlayerSettings.WalkspeedEnabled,
+    Callback = function(v) getgenv().PlayerSettings.WalkspeedEnabled = v end
+})
+local WS_Slider = PlayerTab:CreateSlider({
+    Name = "Walkspeed",
+    Range = {5,100},
+    Increment = 10,
+    CurrentValue = getgenv().PlayerSettings.Walkspeed,
+    Callback = function(v) getgenv().PlayerSettings.Walkspeed = v end
 })
 PlayerTab:CreateButton({
-    Name="Reset Walkspeed",
-    Callback=function()
-        getgenv().PlayerSettings.WalkspeedEnabled=false
-        getgenv().PlayerSettings.Walkspeed=16
+    Name = "Reset Walkspeed",
+    Callback = function()
+        getgenv().PlayerSettings.WalkspeedEnabled = false
+        getgenv().PlayerSettings.Walkspeed = 16
+        pcall(function() WS_Slider:Set(16) end)
         if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-            pcall(function() LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed=16 end)
-        end
-        wsSlider:Set(16)
-        Rayfield:Notify({Title="Player",Content="Walkspeed reset to 16",Duration=2,Image="user"})
-    end
-})
--- JumpPower
-PlayerTab:CreateToggle({
-    Name="Enable Jump Power",
-    CurrentValue=getgenv().PlayerSettings.JumpPowerEnabled,
-    Callback=function(v)
-        getgenv().PlayerSettings.JumpPowerEnabled=v
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-            pcall(function()
-                LocalPlayer.Character:FindFirstChildOfClass("Humanoid").JumpPower = v and getgenv().PlayerSettings.JumpPower or 50
-            end)
+            pcall(function() LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = 16 end)
         end
     end
 })
-local jpSlider = PlayerTab:CreateSlider({
-    Name="Jump Power",
-    Range={50,100},
-    Increment=1,
-    CurrentValue=getgenv().PlayerSettings.JumpPower,
-    Callback=function(v)
-        getgenv().PlayerSettings.JumpPower=v
-        if getgenv().PlayerSettings.JumpPowerEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-            pcall(function() LocalPlayer.Character:FindFirstChildOfClass("Humanoid").JumpPower=v end)
-        end
-    end
+
+local JP_Toggle = PlayerTab:CreateToggle({
+    Name = "Enable Jump Power",
+    CurrentValue = getgenv().PlayerSettings.JumpPowerEnabled,
+    Callback = function(v) getgenv().PlayerSettings.JumpPowerEnabled = v end
+})
+local JP_Slider = PlayerTab:CreateSlider({
+    Name = "Jump Power",
+    Range = {50,150},
+    Increment = 10,
+    CurrentValue = getgenv().PlayerSettings.JumpPower,
+    Callback = function(v) getgenv().PlayerSettings.JumpPower = v end
 })
 PlayerTab:CreateButton({
-    Name="Reset Jump Power",
-    Callback=function()
-        getgenv().PlayerSettings.JumpPowerEnabled=false
-        getgenv().PlayerSettings.JumpPower=50
+    Name = "Reset Jump Power",
+    Callback = function()
+        getgenv().PlayerSettings.JumpPowerEnabled = false
+        getgenv().PlayerSettings.JumpPower = 50
+        pcall(function() JP_Slider:Set(50) end)
         if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-            pcall(function() LocalPlayer.Character:FindFirstChildOfClass("Humanoid").JumpPower=50 end)
+            pcall(function() LocalPlayer.Character:FindFirstChildOfClass("Humanoid").JumpPower = 50 end)
         end
-        jpSlider:Set(50)
-        Rayfield:Notify({Title="Player",Content="Jump Power reset to 50",Duration=2,Image="user"})
-    end
-})
--- Infinite Jump
-PlayerTab:CreateToggle({
-    Name="Infinite Jump",
-    CurrentValue=getgenv().PlayerSettings.InfiniteJump,
-    Callback=function(v)
-        getgenv().PlayerSettings.InfiniteJump=v
-    end
-})
-table.insert(getgenv().Connections, UserInputService.JumpRequest:Connect(function()
-    if getgenv().PlayerSettings.InfiniteJump and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        LocalPlayer.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-    end
-end))
-
--- ======= Circle Tab =======
-CircleTab:CreateSection("Circle Settings")
-CircleTab:CreateSlider({
-    Name="FOV",
-    Range={50,500},
-    Increment=10,
-    CurrentValue=getgenv().CircleSettings.FOV,
-    Callback=function(v)
-        getgenv().CircleSettings.FOV=v
-    end
-})
-CircleTab:CreateColorPicker({
-    Name="Circle Color",
-    Color=getgenv().CircleSettings.Color,
-    Callback=function(v)
-        getgenv().CircleSettings.Color=v
-    end
-})
-CircleTab:CreateToggle({
-    Name="Rainbow Circle",
-    CurrentValue=getgenv().CircleSettings.Rainbow,
-    Callback=function(v)
-        getgenv().CircleSettings.Rainbow=v
-    end
-})
-CircleTab:CreateToggle({
-    Name="Show Aim Circle",
-    CurrentValue=getgenv().CircleSettings.Show,
-    Callback=function(v)
-        getgenv().CircleSettings.Show=v
-        UpdateCircle()
     end
 })
 
--- ======= ESP Tab =======
-ESPTab:CreateSection("ESP Settings")
-ESPTab:CreateToggle({
-    Name="Enable ESP",
-    CurrentValue=getgenv().ESPSettings.Enabled,
-    Callback=function(v) getgenv().ESPSettings.Enabled=v end
-})
-ESPTab:CreateColorPicker({
-    Name="ESP Color",
-    Color=getgenv().ESPSettings.Color,
-    Callback=function(v)
-        getgenv().ESPSettings.Color=v
-    end
+local InfJumpToggle = PlayerTab:CreateToggle({
+    Name = "Infinite Jump",
+    CurrentValue = getgenv().PlayerSettings.InfiniteJump,
+    Callback = function(v) getgenv().PlayerSettings.InfiniteJump = v end
 })
 
--- ======= Aimbot Tab =======
-AimbotTab:CreateSection("Aimbot Settings")
-AimbotTab:CreateToggle({
-    Name="Enable Aimbot",
-    CurrentValue=getgenv().AimbotSettings.Enabled,
-    Callback=function(v)
-        getgenv().AimbotSettings.Enabled=v
-    end
-})
-AimbotTab:CreateDropdown({
-    Name="Target Part",
-    Options={"Head","Torso"},
-    CurrentOption={getgenv().AimbotSettings.TargetPart},
-    Callback=function(opt) getgenv().AimbotSettings.TargetPart=opt[1] end
-})
-AimbotTab:CreateDropdown({
-    Name="Smoothing",
-    Options={"0","5","10","15","20","25","30","35","40","45","50"},
-    CurrentOption={tostring(getgenv().AimbotSettings.Smoothing)},
-    Callback=function(opt) getgenv().AimbotSettings.Smoothing=tonumber(opt[1]) end
-})
-AimbotTab:CreateDropdown({
-    Name="Prediction",
-    Options={"0","5","10","15","20","25","30","35","40","45","50"},
-    CurrentOption={tostring(getgenv().AimbotSettings.Prediction)},
-    Callback=function(opt) getgenv().AimbotSettings.Prediction=tonumber(opt[1]) end
-})
-AimbotTab:CreateToggle({
-    Name="Team Check",
-    CurrentValue=getgenv().AimbotSettings.TeamCheck,
-    Callback=function(v) getgenv().AimbotSettings.TeamCheck=v end
-})
-
--- ======= Misc Tab =======
-MiscTab:CreateSection("Misc Settings")
-MiscTab:CreateDropdown({
-    Name="Select Theme",
-    Options={"Default","Amber Glow","Amethyst","Bloom","Dark Blue","Green","Light","Ocean","Serenity"},
-    CurrentOption={getgenv().MiscSettings.Theme},
-    Callback=function(opt)
-        getgenv().MiscSettings.Theme=opt[1]
-        spawn(function()
-            pcall(function() Window:ModifyTheme(opt[1]) end)
-        end)
-    end
-})
-MiscTab:CreateToggle({
-    Name="Anti AFK",
-    CurrentValue=true,
-    Callback=function(v)
+-- ======= Misc UI =======
+MiscTab:CreateSection("Misc")
+local AntiAFKToggle = MiscTab:CreateToggle({
+    Name = "Anti-AFK",
+    CurrentValue = getgenv().MiscSettings.AntiAFK,
+    Callback = function(v)
+        getgenv().MiscSettings.AntiAFK = v
         if v then
-            local plr=Players.LocalPlayer
-            plr.Idled:Connect(function()
-                bbbatusxxxddddd:CaptureController()
-                bbbatusxxxddddd:ClickButton2(Vector2.new())
+            local conn = LocalPlayer.Idled:Connect(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new())
             end)
+            table.insert(getgenv().Connections, conn)
         end
     end
 })
 MiscTab:CreateButton({
-    Name="Unload Script",
-    Callback=UnloadAll
+    Name = "Unload Everything",
+    Callback = function() UnloadAll() end
 })
 
--- ======= Circle Helper Function =======
-function UpdateCircle()
-    for _, c in pairs(getgenv().ActiveCircles) do
-        pcall(function() c:Remove() end)
+-- ======= Drawing: main circle =======
+local mainCircle = nil
+local function CreateMainCircle()
+    DestroyAllCircles()
+    local m = UserInputService:GetMouseLocation()
+    local c = Drawing.new("Circle")
+    c.NumSides = 100
+    c.Filled = false
+    c.Visible = getgenv().CircleSettings.Visible
+    c.Thickness = getgenv().CircleSettings.Thickness
+    c.Radius = getgenv().CircleSettings.FOV
+    c.Position = Vector2.new(m.X, m.Y)
+    c.Color = getgenv().CircleSettings.Color
+    table.insert(getgenv().ActiveCircles, c)
+    return c
+end
+
+mainCircle = CreateMainCircle()
+local circleConn = RunService.RenderStepped:Connect(function()
+    if not mainCircle then return end
+    local m = UserInputService:GetMouseLocation()
+    pcall(function()
+        mainCircle.Position = Vector2.new(m.X, m.Y)
+        mainCircle.Radius = getgenv().CircleSettings.FOV
+        mainCircle.Thickness = getgenv().CircleSettings.Thickness
+        mainCircle.Visible = getgenv().CircleSettings.Visible
+        if getgenv().CircleSettings.Rainbow then
+            local hue = (tick() / (getgenv().CircleSettings.RainbowSpeed > 0 and getgenv().CircleSettings.RainbowSpeed or 5)) % 1
+            mainCircle.Color = Color3.fromHSV(hue, 1, 1)
+        else
+            mainCircle.Color = getgenv().CircleSettings.Color
+        end
+    end)
+end)
+table.insert(getgenv().Connections, circleConn)
+
+-- ======= ESP core (BoxHandleAdornment) =======
+local function updateESP()
+    if not getgenv().ESPSettings.Enabled then
+        ClearESPBoxes()
+        return
     end
-    getgenv().ActiveCircles={}
-    if getgenv().CircleSettings.Show then
-        local circle=Drawing.new("Circle")
-        circle.Radius=getgenv().CircleSettings.FOV
-        circle.Thickness=getgenv().CircleSettings.Thickness
-        circle.Filled=false
-        circle.Color=getgenv().CircleSettings.Color
-        circle.Visible=true
-        table.insert(getgenv().ActiveCircles,circle)
-        table.insert(getgenv().Connections,RunService.RenderStepped:Connect(function()
-            if not circle or not circle.Visible then return end
-            local m=UserInputService:GetMouseLocation()
-            circle.Position=Vector2.new(m.X,m.Y)
-            circle.Radius=getgenv().CircleSettings.FOV
-            if getgenv().CircleSettings.Rainbow then
-                circle.Color=Color3.fromHSV((tick()/getgenv().CircleSettings.RainbowSpeed)%1,1,1)
+    local lpRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local refPos = lpRoot and lpRoot.Position or Camera.CFrame.Position
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        local char = plr.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local root = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso"))
+        if hum and root and hum.Health > 0 then
+            local dist = (root.Position - refPos).Magnitude
+            if dist <= getgenv().ESPSettings.MaxDistance then
+                if not getgenv().ESPBoxes[plr] then
+                    local b = Instance.new("BoxHandleAdornment")
+                    b.Size = Vector3.new(4, 6, 1)
+                    b.Adornee = root
+                    b.Color3 = getgenv().ESPSettings.Color
+                    b.Transparency = 0.5
+                    b.AlwaysOnTop = true
+                    b.ZIndex = 10
+                    b.Parent = Camera
+                    getgenv().ESPBoxes[plr] = b
+                else
+                    pcall(function()
+                        getgenv().ESPBoxes[plr].Adornee = root
+                        getgenv().ESPBoxes[plr].Color3 = getgenv().ESPSettings.Color
+                    end)
+                end
             else
-                circle.Color=getgenv().CircleSettings.Color
+                if getgenv().ESPBoxes[plr] then
+                    pcall(function() getgenv().ESPBoxes[plr]:Destroy() end)
+                    getgenv().ESPBoxes[plr] = nil
+                end
             end
-            circle.Visible=getgenv().CircleSettings.Show
-        end))
+        else
+            if getgenv().ESPBoxes[plr] then
+                pcall(function() getgenv().ESPBoxes[plr]:Destroy() end)
+                getgenv().ESPBoxes[plr] = nil
+            end
+        end
     end
 end
-UpdateCircle()
+
+local espConn = RunService.RenderStepped:Connect(updateESP)
+table.insert(getgenv().Connections, espConn)
+
+Players.PlayerRemoving:Connect(function(plr)
+    if getgenv().ESPBoxes[plr] then
+        pcall(function() getgenv().ESPBoxes[plr]:Destroy() end)
+        getgenv().ESPBoxes[plr] = nil
+    end
+end)
+
+-- ======= Player enforcement (WS / JP) =======
+local enforceConn = RunService.RenderStepped:Connect(function()
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if getgenv().PlayerSettings.WalkspeedEnabled then
+                pcall(function() hum.WalkSpeed = getgenv().PlayerSettings.Walkspeed end)
+            end
+            if getgenv().PlayerSettings.JumpPowerEnabled then
+                pcall(function() hum.JumpPower = getgenv().PlayerSettings.JumpPower end)
+            end
+        end
+    end
+end)
+table.insert(getgenv().Connections, enforceConn)
+
+-- infinite jump
+local infJumpConn = UserInputService.JumpRequest:Connect(function()
+    if getgenv().PlayerSettings.InfiniteJump and LocalPlayer.Character then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end) end
+    end
+end)
+table.insert(getgenv().Connections, infJumpConn)
+
+-- ensure JP/WS applied on respawn
+LocalPlayer.CharacterAdded:Connect(function(char)
+    wait(0.1)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        if getgenv().PlayerSettings.JumpPowerEnabled then
+            pcall(function() hum.JumpPower = getgenv().PlayerSettings.JumpPower end)
+        end
+        if getgenv().PlayerSettings.WalkspeedEnabled then
+            pcall(function() hum.WalkSpeed = getgenv().PlayerSettings.Walkspeed end)
+        end
+    end
+end)
+
+-- ======= Aimbot core =======
+local aimActive = false
+
+local inputBeginConn = UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        if getgenv().AimbotSettings.Mode == "Hold" then
+            aimActive = true
+        else
+            aimActive = not aimActive
+        end
+    end
+end)
+table.insert(getgenv().Connections, inputBeginConn)
+
+local inputEndConn = UserInputService.InputEnded:Connect(function(input, gp)
+    if gp then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        if getgenv().AimbotSettings.Mode == "Hold" then
+            aimActive = false
+        end
+    end
+end)
+table.insert(getgenv().Connections, inputEndConn)
+
+local function getClosest()
+    local closestPlr = nil
+    local shortest = getgenv().CircleSettings.FOV
+    local mousePos = UserInputService:GetMouseLocation()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        if not plr.Character then continue end
+        local aimPart = getAimPartFromName(plr.Character, getgenv().AimbotSettings.TargetPart)
+        if not aimPart then continue end
+        if getgenv().AimbotSettings.TeamCheck and plr.Team == LocalPlayer.Team then continue end
+        local headPos, onScreen = Camera:WorldToViewportPoint(aimPart.Position)
+        if onScreen then
+            local dist = (Vector2.new(headPos.X, headPos.Y) - mousePos).Magnitude
+            if dist <= shortest then
+                local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+                if hum and hum.Health > 0 then
+                    shortest = dist
+                    closestPlr = plr
+                end
+            end
+        end
+    end
+    return closestPlr
+end
+
+local aimConn = RunService.RenderStepped:Connect(function()
+    if not getgenv().AimbotSettings.Enabled then return end
+    if getgenv().AimbotSettings.Mode == "Hold" and not aimActive then return end
+    if getgenv().AimbotSettings.Mode == "Toggle" and not aimActive then return end
+
+    local target = getClosest()
+    if not target or not target.Character then return end
+
+    local aimPart = getAimPartFromName(target.Character, getgenv().AimbotSettings.TargetPart)
+    if not aimPart then return end
+
+    local targetPos = aimPart.Position
+    local hrp = target.Character:FindFirstChild("HumanoidRootPart")
+    if hrp and getgenv().AimbotSettings.Prediction ~= "Off" then
+        local mult = (getgenv().AimbotSettings.Prediction == "Low" and 0.06) or (getgenv().AimbotSettings.Prediction == "Medium" and 0.11) or (getgenv().AimbotSettings.Prediction == "High" and 0.2) or 0
+        targetPos = targetPos + hrp.Velocity * mult
+    end
+
+    local camCF = Camera.CFrame
+    local wanted = CFrame.new(camCF.Position, targetPos)
+    local smoothing = getgenv().AimbotSettings.Smoothing
+    if smoothing == "Off" then
+        Camera.CFrame = wanted
+    else
+        local factor = (smoothing == "Low" and 0.15) or (smoothing == "Medium" and 0.08) or (smoothing == "High" and 0.04) or 0.12
+        Camera.CFrame = camCF:Lerp(wanted, factor)
+    end
+end)
+table.insert(getgenv().Connections, aimConn)
+
+-- ======= Finish =======
+getgenv().ScriptLoaded = true
+pcall(function() Rayfield:Notify({ Title = "Valox Hub", Content = "Loaded", Duration = 3 }) end)
