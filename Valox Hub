@@ -1,4 +1,5 @@
--- Works with Solara and common executors.
+-- V 1.5.5
+-- ALL credits to me
 
 -- ======= Cleanup previous runs =======
 if getgenv().Rayfield and type(getgenv().Rayfield.Destroy) == "function" then
@@ -30,11 +31,12 @@ getgenv().ESPBoxes = {}
 -- ======= Defaults =======
 getgenv().AimbotSettings = getgenv().AimbotSettings or {
     Enabled = false,
+    SmartAimbot = True,
     Mode = "Hold",
     TeamCheck = false,
     Prediction = "Off",
     Smoothing = "Off",
-    TargetPart = "Head"
+    TargetPart = "Torso"
 }
 
 getgenv().CircleSettings = getgenv().CircleSettings or {
@@ -111,8 +113,10 @@ local function getAimPartFromName(character, name)
     if name == "Head" then
         return character:FindFirstChild("Head")
     else
-        -- Torso target: prefer HumanoidRootPart, fallback to UpperTorso or Torso
-        return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso") or character:FindFirstChild("LowerTorso")
+        return character:FindFirstChild("HumanoidRootPart")
+            or character:FindFirstChild("UpperTorso")
+            or character:FindFirstChild("Torso")
+            or character:FindFirstChild("LowerTorso")
     end
 end
 
@@ -141,12 +145,17 @@ local ESPTab     = Window:CreateTab("ESP", "eye")
 local PlayerTab  = Window:CreateTab("Player", "user")
 local MiscTab    = Window:CreateTab("Misc", "settings")
 
--- ======= Aimbot UI (single set) =======
+-- ======= Aimbot UI =======
 AimbotTab:CreateSection("Aimbot")
 local AimbotToggle = AimbotTab:CreateToggle({
     Name = "Enable Aimbot",
     CurrentValue = getgenv().AimbotSettings.Enabled,
     Callback = function(v) getgenv().AimbotSettings.Enabled = v end
+})
+local SmartToggle = AimbotTab:CreateToggle({
+    Name = "Smart Aimbot",
+    CurrentValue = getgenv().AimbotSettings.SmartAimbot,
+    Callback = function(v) getgenv().AimbotSettings.SmartAimbot = v end
 })
 local TeamToggle = AimbotTab:CreateToggle({
     Name = "Team Check",
@@ -250,8 +259,8 @@ local WS_Toggle = PlayerTab:CreateToggle({
 })
 local WS_Slider = PlayerTab:CreateSlider({
     Name = "Walkspeed",
-    Range = {5,100},
-    Increment = 10,
+    Range = {1,100},
+    Increment = 1,
     CurrentValue = getgenv().PlayerSettings.Walkspeed,
     Callback = function(v) getgenv().PlayerSettings.Walkspeed = v end
 })
@@ -437,7 +446,6 @@ local infJumpConn = UserInputService.JumpRequest:Connect(function()
 end)
 table.insert(getgenv().Connections, infJumpConn)
 
--- ensure JP/WS applied on respawn
 LocalPlayer.CharacterAdded:Connect(function(char)
     wait(0.1)
     local hum = char:FindFirstChildOfClass("Humanoid")
@@ -453,52 +461,45 @@ end)
 
 -- ======= Aimbot core =======
 local aimActive = false
-
-local inputBeginConn = UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        if getgenv().AimbotSettings.Mode == "Hold" then
-            aimActive = true
-        else
-            aimActive = not aimActive
-        end
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if getgenv().AimbotSettings.Mode == "Hold" and input.UserInputType == Enum.UserInputType.MouseButton2 then
+        aimActive = true
+    elseif getgenv().AimbotSettings.Mode == "Toggle" and input.UserInputType == Enum.UserInputType.MouseButton2 then
+        aimActive = not aimActive
     end
 end)
-table.insert(getgenv().Connections, inputBeginConn)
-
-local inputEndConn = UserInputService.InputEnded:Connect(function(input, gp)
-    if gp then return end
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        if getgenv().AimbotSettings.Mode == "Hold" then
-            aimActive = false
-        end
+UserInputService.InputEnded:Connect(function(input)
+    if getgenv().AimbotSettings.Mode == "Hold" and input.UserInputType == Enum.UserInputType.MouseButton2 then
+        aimActive = false
     end
 end)
-table.insert(getgenv().Connections, inputEndConn)
+
+local function smoothingFactorFromSetting()
+    local s = getgenv().AimbotSettings.Smoothing
+    return (s == "Off" and 1) or (s == "Low" and 0.15) or (s == "Medium" and 0.08) or (s == "High" and 0.03) or 0.1
+end
 
 local function getClosest()
-    local closestPlr = nil
-    local shortest = getgenv().CircleSettings.FOV
+    local closest, shortestDist = nil, math.huge
     local mousePos = UserInputService:GetMouseLocation()
-    for _, plr in ipairs(Players:GetPlayers()) do
+    for _, plr in pairs(Players:GetPlayers()) do
         if plr == LocalPlayer then continue end
-        if not plr.Character then continue end
-        local aimPart = getAimPartFromName(plr.Character, getgenv().AimbotSettings.TargetPart)
-        if not aimPart then continue end
-        if getgenv().AimbotSettings.TeamCheck and plr.Team == LocalPlayer.Team then continue end
-        local headPos, onScreen = Camera:WorldToViewportPoint(aimPart.Position)
-        if onScreen then
-            local dist = (Vector2.new(headPos.X, headPos.Y) - mousePos).Magnitude
-            if dist <= shortest then
-                local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-                if hum and hum.Health > 0 then
-                    shortest = dist
-                    closestPlr = plr
-                end
+        local char = plr.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if hum and root and hum.Health > 0 then
+            if getgenv().AimbotSettings.TeamCheck and plr.Team == LocalPlayer.Team then continue end
+            local screenPos, onScreen = Camera:WorldToViewportPoint(root.Position)
+            if not onScreen then continue end
+            local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(mousePos.X, mousePos.Y)).Magnitude
+            if dist < shortestDist and dist <= getgenv().CircleSettings.FOV then
+                closest = plr
+                shortestDist = dist
             end
         end
     end
-    return closestPlr
+    return closest
 end
 
 local aimConn = RunService.RenderStepped:Connect(function()
@@ -508,29 +509,44 @@ local aimConn = RunService.RenderStepped:Connect(function()
 
     local target = getClosest()
     if not target or not target.Character then return end
+    local hum = target.Character:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return end
 
-    local aimPart = getAimPartFromName(target.Character, getgenv().AimbotSettings.TargetPart)
-    if not aimPart then return end
+    local finalPart = getAimPartFromName(target.Character, getgenv().AimbotSettings.TargetPart)
+    if not finalPart then return end
 
-    local targetPos = aimPart.Position
+    if getgenv().AimbotSettings.SmartAimbot then
+        local origin = Camera.CFrame.Position
+        local direction = (finalPart.Position - origin)
+        local rayParams = RaycastParams.new()
+        rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+        rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
+        local result = workspace:Raycast(origin, direction, rayParams)
+        if result and result.Instance and result.Instance:IsA("BasePart") and not result.Instance:IsDescendantOf(target.Character) then
+            local headPart = target.Character:FindFirstChild("Head")
+            if headPart and finalPart ~= headPart then
+                finalPart = headPart
+            end
+        end
+    end
+
+    local targetPos = finalPart.Position
     local hrp = target.Character:FindFirstChild("HumanoidRootPart")
     if hrp and getgenv().AimbotSettings.Prediction ~= "Off" then
-        local mult = (getgenv().AimbotSettings.Prediction == "Low" and 0.06) or (getgenv().AimbotSettings.Prediction == "Medium" and 0.11) or (getgenv().AimbotSettings.Prediction == "High" and 0.2) or 0
+        local mult = (getgenv().AimbotSettings.Prediction == "Low" and 0.06)
+                  or (getgenv().AimbotSettings.Prediction == "Medium" and 0.11)
+                  or (getgenv().AimbotSettings.Prediction == "High" and 0.2)
+                  or 0
         targetPos = targetPos + hrp.Velocity * mult
     end
 
     local camCF = Camera.CFrame
     local wanted = CFrame.new(camCF.Position, targetPos)
-    local smoothing = getgenv().AimbotSettings.Smoothing
-    if smoothing == "Off" then
-        Camera.CFrame = wanted
-    else
-        local factor = (smoothing == "Low" and 0.15) or (smoothing == "Medium" and 0.08) or (smoothing == "High" and 0.04) or 0.12
-        Camera.CFrame = camCF:Lerp(wanted, factor)
-    end
+
+    Camera.CFrame = camCF:Lerp(wanted, smoothingFactorFromSetting())
 end)
 table.insert(getgenv().Connections, aimConn)
 
 -- ======= Finish =======
 getgenv().ScriptLoaded = true
-pcall(function() Rayfield:Notify({ Title = "Valox Hub", Content = "Loaded", Duration = 3 }) end)
+pcall(function() Rayfield:Notify({ Title = "Valox Hub", Content = "Loaded, Enjoy!", Duration = 3 }) end)
