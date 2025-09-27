@@ -1,7 +1,7 @@
--- V 1.5.5
--- ALL credits to me
-
+-- V 1.7.4
+-- ALL credits to Valox
 -- ======= Cleanup previous runs =======
+print("Starting cleanup...")
 if getgenv().Rayfield and type(getgenv().Rayfield.Destroy) == "function" then
     pcall(function() getgenv().Rayfield:Destroy() end)
 end
@@ -28,10 +28,49 @@ if getgenv().ESPBoxes then
 end
 getgenv().ESPBoxes = {}
 
+if getgenv().SkeletonLines then
+    for plr, conn in pairs(getgenv().SkeletonLines) do
+        pcall(function() if conn.Connection then conn.Connection:Disconnect() end end)
+        for _, line in pairs(conn and conn.Limbs or {}) do
+            pcall(function() if line and line.Remove then line:Remove() end end)
+        end
+    end
+end
+getgenv().SkeletonLines = {}
+
+if getgenv().AntiFlingParts then
+    for _, part in pairs(getgenv().AntiFlingParts) do
+        pcall(function() if part and part.Destroy then part:Destroy() end end)
+    end
+end
+getgenv().AntiFlingParts = {}
+
+if getgenv().HitboxAdornments then
+    for _, adorn in pairs(getgenv().HitboxAdornments) do
+        pcall(function() if adorn and adorn.Destroy then adorn:Destroy() end end)
+    end
+end
+getgenv().HitboxAdornments = {}
+
+-- Reset Hitbox sizes on startup
+for _, plr in pairs(game:GetService("Players"):GetPlayers()) do
+    if plr ~= game:GetService("Players").LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+        pcall(function()
+            local root = plr.Character.HumanoidRootPart
+            root.Size = Vector3.new(2, 2, 1)
+            root.Transparency = 1
+            root.CanCollide = true
+            root.Material = Enum.Material.Plastic
+            root.BrickColor = BrickColor.new("Medium stone grey")
+            print("Reset HumanoidRootPart for", plr.Name, ": Transparency =", root.Transparency)
+        end)
+    end
+end
+
 -- ======= Defaults =======
 getgenv().AimbotSettings = getgenv().AimbotSettings or {
     Enabled = false,
-    SmartAimbot = True,
+    SmartAimbot = true,
     Mode = "Hold",
     TeamCheck = false,
     Prediction = "Off",
@@ -41,7 +80,7 @@ getgenv().AimbotSettings = getgenv().AimbotSettings or {
 
 getgenv().CircleSettings = getgenv().CircleSettings or {
     FOV = 120,
-    Color = Color3.fromRGB(255,255,255),
+    Color = Color3.fromRGB(255, 255, 255),
     Rainbow = false,
     Thickness = 2,
     RainbowSpeed = 5,
@@ -50,7 +89,8 @@ getgenv().CircleSettings = getgenv().CircleSettings or {
 
 getgenv().ESPSettings = getgenv().ESPSettings or {
     Enabled = false,
-    Color = Color3.fromRGB(255,0,0),
+    SkeletonEnabled = false,
+    Color = Color3.fromRGB(255, 0, 0),
     MaxDistance = 500
 }
 
@@ -59,11 +99,20 @@ getgenv().PlayerSettings = getgenv().PlayerSettings or {
     Walkspeed = 16,
     JumpPowerEnabled = false,
     JumpPower = 50,
-    InfiniteJump = false
+    InfiniteJump = false,
+    NoclipEnabled = false,
+    FlyEnabled = false,
+    FlySpeed = 50
 }
 
 getgenv().MiscSettings = getgenv().MiscSettings or {
-    AntiAFK = false
+    AntiAFK = false,
+    AntiFling = false
+}
+
+getgenv().HomeSettings = getgenv().HomeSettings or {
+    HitboxEnabled = false,
+    HitboxSize = 50
 }
 
 -- ======= Services =======
@@ -73,11 +122,15 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local VirtualUser = game:GetService("VirtualUser")
+local CoreGui = game:GetService("CoreGui")
 
 -- runtime tables
 getgenv().ActiveCircles = getgenv().ActiveCircles or {}
 getgenv().ESPBoxes = getgenv().ESPBoxes or {}
+getgenv().SkeletonLines = getgenv().SkeletonLines or {}
+getgenv().AntiFlingParts = getgenv().AntiFlingParts or {}
 getgenv().Connections = getgenv().Connections or {}
+getgenv().HitboxAdornments = getgenv().HitboxAdornments or {}
 
 -- ======= Helpers =======
 local function DestroyAllCircles()
@@ -94,18 +147,56 @@ local function ClearESPBoxes()
     end
 end
 
+local function ClearSkeletonLines()
+    for plr, conn in pairs(getgenv().SkeletonLines) do
+        pcall(function() if conn.Connection then conn.Connection:Disconnect() end end)
+        for _, line in pairs(conn and conn.Limbs or {}) do
+            pcall(function() if line and line.Remove then line:Remove() end end)
+        end
+        getgenv().SkeletonLines[plr] = nil
+    end
+end
+
+local function ClearHitboxAdornments()
+    for plr, adorn in pairs(getgenv().HitboxAdornments) do
+        pcall(function() if adorn and adorn.Destroy then adorn:Destroy() end end)
+        getgenv().HitboxAdornments[plr] = nil
+    end
+end
+
 local function UnloadAll()
+    print("Unloading all...")
     DestroyAllCircles()
     ClearESPBoxes()
+    ClearSkeletonLines()
+    ClearHitboxAdornments()
     for _, conn in pairs(getgenv().Connections) do
         pcall(function() conn:Disconnect() end)
     end
     getgenv().Connections = {}
+    for _, part in pairs(getgenv().AntiFlingParts) do
+        pcall(function() if part and part.Destroy then part:Destroy() end end)
+    end
+    getgenv().AntiFlingParts = {}
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            pcall(function()
+                local root = plr.Character.HumanoidRootPart
+                root.Size = Vector3.new(2, 2, 1)
+                root.Transparency = 1
+                root.CanCollide = true
+                root.Material = Enum.Material.Plastic
+                root.BrickColor = BrickColor.new("Medium stone grey")
+                print("Unloaded HumanoidRootPart for", plr.Name, ": Transparency =", root.Transparency)
+            end)
+        end
+    end
     if getgenv().Rayfield and type(getgenv().Rayfield.Destroy) == "function" then
         pcall(function() getgenv().Rayfield:Destroy() end)
     end
     getgenv().Rayfield = nil
     getgenv().ScriptLoaded = false
+    print("Unload complete")
 end
 
 local function getAimPartFromName(character, name)
@@ -121,432 +212,1375 @@ local function getAimPartFromName(character, name)
 end
 
 -- ======= Load Rayfield =======
+print("Attempting to load Rayfield...")
 local ok, Rayfield = pcall(function()
     return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 end)
 if not ok or not Rayfield then
-    warn("Rayfield failed to load")
+    warn("Rayfield failed to load!", Rayfield)
     return
 end
 getgenv().Rayfield = Rayfield
+print("Rayfield loaded successfully", Rayfield)
+
+-- ======= Mobile check =======
+local isMobile = UserInputService.TouchEnabled or (UserInputService.KeyboardEnabled == false)
 
 -- ======= UI =======
-local Window = Rayfield:CreateWindow({
-    Name = "Valox Hub",
-    LoadingTitle = "Valox Hub Loading",
-    LoadingSubtitle = "by Valox",
-    ConfigurationSaving = { Enabled = true, FolderName = "ValoxHub", FileName = "Settings" },
-    KeySystem = false
-})
-
-local AimbotTab = Window:CreateTab("Aimbot", "target")
-local CircleTab  = Window:CreateTab("Circle", "circle")
-local ESPTab     = Window:CreateTab("ESP", "eye")
-local PlayerTab  = Window:CreateTab("Player", "user")
-local MiscTab    = Window:CreateTab("Misc", "settings")
-
--- ======= Aimbot UI =======
-AimbotTab:CreateSection("Aimbot")
-local AimbotToggle = AimbotTab:CreateToggle({
-    Name = "Enable Aimbot",
-    CurrentValue = getgenv().AimbotSettings.Enabled,
-    Callback = function(v) getgenv().AimbotSettings.Enabled = v end
-})
-local SmartToggle = AimbotTab:CreateToggle({
-    Name = "Smart Aimbot",
-    CurrentValue = getgenv().AimbotSettings.SmartAimbot,
-    Callback = function(v) getgenv().AimbotSettings.SmartAimbot = v end
-})
-local TeamToggle = AimbotTab:CreateToggle({
-    Name = "Team Check",
-    CurrentValue = getgenv().AimbotSettings.TeamCheck,
-    Callback = function(v) getgenv().AimbotSettings.TeamCheck = v end
-})
-local PredictionDropdown = AimbotTab:CreateDropdown({
-    Name = "Prediction",
-    Options = {"Off","Low","Medium","High"},
-    CurrentOption = {getgenv().AimbotSettings.Prediction},
-    Callback = function(opt) getgenv().AimbotSettings.Prediction = opt[1] end
-})
-local SmoothingDropdown = AimbotTab:CreateDropdown({
-    Name = "Smoothing",
-    Options = {"Off","Low","Medium","High"},
-    CurrentOption = {getgenv().AimbotSettings.Smoothing},
-    Callback = function(opt) getgenv().AimbotSettings.Smoothing = opt[1] end
-})
-local ModeDropdown = AimbotTab:CreateDropdown({
-    Name = "Toggle Mode",
-    Options = {"Hold","Toggle"},
-    CurrentOption = {getgenv().AimbotSettings.Mode},
-    Callback = function(opt) getgenv().AimbotSettings.Mode = opt[1] end
-})
-local TargetDropdown = AimbotTab:CreateDropdown({
-    Name = "Target Part",
-    Options = {"Head","Torso"},
-    CurrentOption = {getgenv().AimbotSettings.TargetPart},
-    Callback = function(opt) getgenv().AimbotSettings.TargetPart = opt[1] end
-})
-
--- ======= Circle UI =======
-CircleTab:CreateSection("Circle")
-local FOVSlider = CircleTab:CreateSlider({
-    Name = "FOV",
-    Range = {50,500},
-    Increment = 10,
-    CurrentValue = getgenv().CircleSettings.FOV,
-    Callback = function(v) getgenv().CircleSettings.FOV = v end
-})
-local CircleColorPicker = CircleTab:CreateColorPicker({
-    Name = "Circle Color",
-    Color = getgenv().CircleSettings.Color,
-    Callback = function(v) getgenv().CircleSettings.Color = v end
-})
-local RainbowToggle = CircleTab:CreateToggle({
-    Name = "Rainbow Circle",
-    CurrentValue = getgenv().CircleSettings.Rainbow,
-    Callback = function(v) getgenv().CircleSettings.Rainbow = v end
-})
-local ThicknessSlider = CircleTab:CreateSlider({
-    Name = "Thickness",
-    Range = {1,10},
-    Increment = 1,
-    CurrentValue = getgenv().CircleSettings.Thickness,
-    Callback = function(v) getgenv().CircleSettings.Thickness = v end
-})
-local ShowCircleToggle = CircleTab:CreateToggle({
-    Name = "Show Circle",
-    CurrentValue = getgenv().CircleSettings.Visible,
-    Callback = function(v)
-        getgenv().CircleSettings.Visible = v
-        if mainCircle then pcall(function() mainCircle.Visible = v end) end
-    end
-})
-
--- ======= ESP UI =======
-ESPTab:CreateSection("ESP")
-local ESPToggle = ESPTab:CreateToggle({
-    Name = "Enable ESP",
-    CurrentValue = getgenv().ESPSettings.Enabled,
-    Callback = function(v)
-        getgenv().ESPSettings.Enabled = v
-        if not v then ClearESPBoxes() end
-    end
-})
-local ESPColorPicker = ESPTab:CreateColorPicker({
-    Name = "ESP Color",
-    Color = getgenv().ESPSettings.Color,
-    Callback = function(v)
-        getgenv().ESPSettings.Color = v
-        for _, b in pairs(getgenv().ESPBoxes) do
-            pcall(function() b.Color3 = v end)
-        end
-    end
-})
-local ESPRangeSlider = ESPTab:CreateSlider({
-    Name = "Max Distance",
-    Range = {50,2000},
-    Increment = 50,
-    CurrentValue = getgenv().ESPSettings.MaxDistance,
-    Callback = function(v) getgenv().ESPSettings.MaxDistance = v end
-})
-
--- ======= Player UI =======
-PlayerTab:CreateSection("Player")
-local WS_Toggle = PlayerTab:CreateToggle({
-    Name = "Enable Walkspeed",
-    CurrentValue = getgenv().PlayerSettings.WalkspeedEnabled,
-    Callback = function(v) getgenv().PlayerSettings.WalkspeedEnabled = v end
-})
-local WS_Slider = PlayerTab:CreateSlider({
-    Name = "Walkspeed",
-    Range = {1,100},
-    Increment = 1,
-    CurrentValue = getgenv().PlayerSettings.Walkspeed,
-    Callback = function(v) getgenv().PlayerSettings.Walkspeed = v end
-})
-PlayerTab:CreateButton({
-    Name = "Reset Walkspeed",
-    Callback = function()
-        getgenv().PlayerSettings.WalkspeedEnabled = false
-        getgenv().PlayerSettings.Walkspeed = 16
-        pcall(function() WS_Slider:Set(16) end)
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-            pcall(function() LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = 16 end)
-        end
-    end
-})
-
-local JP_Toggle = PlayerTab:CreateToggle({
-    Name = "Enable Jump Power",
-    CurrentValue = getgenv().PlayerSettings.JumpPowerEnabled,
-    Callback = function(v) getgenv().PlayerSettings.JumpPowerEnabled = v end
-})
-local JP_Slider = PlayerTab:CreateSlider({
-    Name = "Jump Power",
-    Range = {50,150},
-    Increment = 10,
-    CurrentValue = getgenv().PlayerSettings.JumpPower,
-    Callback = function(v) getgenv().PlayerSettings.JumpPower = v end
-})
-PlayerTab:CreateButton({
-    Name = "Reset Jump Power",
-    Callback = function()
-        getgenv().PlayerSettings.JumpPowerEnabled = false
-        getgenv().PlayerSettings.JumpPower = 50
-        pcall(function() JP_Slider:Set(50) end)
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-            pcall(function() LocalPlayer.Character:FindFirstChildOfClass("Humanoid").JumpPower = 50 end)
-        end
-    end
-})
-
-local InfJumpToggle = PlayerTab:CreateToggle({
-    Name = "Infinite Jump",
-    CurrentValue = getgenv().PlayerSettings.InfiniteJump,
-    Callback = function(v) getgenv().PlayerSettings.InfiniteJump = v end
-})
-
--- ======= Misc UI =======
-MiscTab:CreateSection("Misc")
-local AntiAFKToggle = MiscTab:CreateToggle({
-    Name = "Anti-AFK",
-    CurrentValue = getgenv().MiscSettings.AntiAFK,
-    Callback = function(v)
-        getgenv().MiscSettings.AntiAFK = v
-        if v then
-            local conn = LocalPlayer.Idled:Connect(function()
-                VirtualUser:CaptureController()
-                VirtualUser:ClickButton2(Vector2.new())
-            end)
-            table.insert(getgenv().Connections, conn)
-        end
-    end
-})
-MiscTab:CreateButton({
-    Name = "Unload Script",
-    Callback = function() UnloadAll() end
-})
-
--- ======= Drawing: main circle =======
-local mainCircle = nil
-local function CreateMainCircle()
-    DestroyAllCircles()
-    local m = UserInputService:GetMouseLocation()
-    local c = Drawing.new("Circle")
-    c.NumSides = 100
-    c.Filled = false
-    c.Visible = getgenv().CircleSettings.Visible
-    c.Thickness = getgenv().CircleSettings.Thickness
-    c.Radius = getgenv().CircleSettings.FOV
-    c.Position = Vector2.new(m.X, m.Y)
-    c.Color = getgenv().CircleSettings.Color
-    table.insert(getgenv().ActiveCircles, c)
-    return c
-end
-
-mainCircle = CreateMainCircle()
-local circleConn = RunService.RenderStepped:Connect(function()
-    if not mainCircle then return end
-    local m = UserInputService:GetMouseLocation()
-    pcall(function()
-        mainCircle.Position = Vector2.new(m.X, m.Y)
-        mainCircle.Radius = getgenv().CircleSettings.FOV
-        mainCircle.Thickness = getgenv().CircleSettings.Thickness
-        mainCircle.Visible = getgenv().CircleSettings.Visible
-        if getgenv().CircleSettings.Rainbow then
-            local hue = (tick() / (getgenv().CircleSettings.RainbowSpeed > 0 and getgenv().CircleSettings.RainbowSpeed or 5)) % 1
-            mainCircle.Color = Color3.fromHSV(hue, 1, 1)
-        else
-            mainCircle.Color = getgenv().CircleSettings.Color
-        end
-    end)
+local Window
+local success, err = pcall(function()
+    Window = Rayfield:CreateWindow({
+        Name = "Valox Hub",
+        LoadingTitle = "Valox Hub Loading",
+        LoadingSubtitle = "by Valox Creations",
+        ConfigurationSaving = { Enabled = true, FolderName = "ValoxHub", FileName = "Settings" },
+        KeySystem = false
+    })
 end)
-table.insert(getgenv().Connections, circleConn)
+if not success then
+    warn("Window creation failed:", err)
+    return
+end
+print("Window created:", Window)
 
--- ======= ESP core (BoxHandleAdornment) =======
-local function updateESP()
-    if not getgenv().ESPSettings.Enabled then
-        ClearESPBoxes()
-        return
+-- create tabs conditionally, Home first
+local success, err = pcall(function()
+    local HomeTab = Window:CreateTab("Home", "home")
+    local AimbotTab, CircleTab
+    if not isMobile then
+        AimbotTab = Window:CreateTab("Aimbot", "target")
+        CircleTab = Window:CreateTab("Circle", "circle")
     end
-    local lpRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    local refPos = lpRoot and lpRoot.Position or Camera.CFrame.Position
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr == LocalPlayer then continue end
-        local char = plr.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local root = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso"))
-        if hum and root and hum.Health > 0 then
-            local dist = (root.Position - refPos).Magnitude
-            if dist <= getgenv().ESPSettings.MaxDistance then
-                if not getgenv().ESPBoxes[plr] then
-                    local b = Instance.new("BoxHandleAdornment")
-                    b.Size = Vector3.new(4, 6, 1)
-                    b.Adornee = root
-                    b.Color3 = getgenv().ESPSettings.Color
-                    b.Transparency = 0.5
-                    b.AlwaysOnTop = true
-                    b.ZIndex = 10
-                    b.Parent = Camera
-                    getgenv().ESPBoxes[plr] = b
+    local ESPTab = Window:CreateTab("ESP", "eye")
+    local PlayerTab = Window:CreateTab("Player", "user")
+    local MiscTab = Window:CreateTab("Misc", "settings")
+
+    -- ======= Home tab =======
+    HomeTab:CreateSection("Changelog & Updates")
+    HomeTab:CreateParagraph({
+        Title = "Changelog",
+        Content = [[
+### Version 1.7.4
+- Fixed Hitbox Expander to show visible boxes with proper size and transparency
+
+### Version 1.7.3
+- Added debug prints for line creation and updates
+
+### Version 1.7.2
+- Fixed grey box in other players' characters (set HumanoidRootPart Transparency = 1 when not expanded)
+- Fixed Box ESP not appearing (reverted to fixed-size, parented to CoreGui, offset CFrame)
+- Verified Anti-Fling cleanup and transparency
+
+### Version 1.7.1
+- Reordered changelog (newest first)
+- Fixed Box ESP to outline character using dynamic sizing
+- Verified Anti-Fling cleanup
+
+### Version 1.7.0
+- Made changelog scrollable
+- Appended changelog history
+- Fixed Anti-Fling cleanup for other players
+
+### Version 1.6.9
+- Added Hitbox Expander cleanup on script unload
+
+### Version 1.6.8
+- Fixed minor bugs in Fly and Anti-Fling
+
+### Version 1.6.7
+- Updated Fly: speed range 50-1000, upright orientation, persists on death/reset
+- Added Anti-Fling toggle in Misc tab with /antion, /antioff commands
+- Removed Infinite Jump notification
+- Moved Bring All and Hitbox Expander to Misc tab
+
+### Version 1.5.5
+- Initial version with Home tab first
+- Features: Aimbot, Circle, ESP (Box), Player (Walkspeed, Jump Power, Infinite Jump, Noclip, Fly), Misc (Anti-AFK, Unload Script)
+        ]]
+    })
+
+    -- ======= Aimbot UI & core (mobile safe) =======
+    local aimConn = nil
+    if not isMobile then
+        AimbotTab:CreateSection("Aimbot")
+        AimbotTab:CreateToggle({
+            Name = "Enable Aimbot",
+            CurrentValue = getgenv().AimbotSettings.Enabled,
+            Callback = function(v) getgenv().AimbotSettings.Enabled = v end
+        })
+        AimbotTab:CreateToggle({
+            Name = "Smart Aimbot",
+            CurrentValue = getgenv().AimbotSettings.SmartAimbot,
+            Callback = function(v) getgenv().AimbotSettings.SmartAimbot = v end
+        })
+        AimbotTab:CreateToggle({
+            Name = "Team Check",
+            CurrentValue = getgenv().AimbotSettings.TeamCheck,
+            Callback = function(v) getgenv().AimbotSettings.TeamCheck = v end
+        })
+        AimbotTab:CreateDropdown({
+            Name = "Prediction",
+            Options = {"Off", "Low", "Medium", "High"},
+            CurrentOption = {getgenv().AimbotSettings.Prediction},
+            Callback = function(opt) getgenv().AimbotSettings.Prediction = opt[1] end
+        })
+        AimbotTab:CreateDropdown({
+            Name = "Smoothing",
+            Options = {"Off", "Low", "Medium", "High"},
+            CurrentOption = {getgenv().AimbotSettings.Smoothing},
+            Callback = function(opt) getgenv().AimbotSettings.Smoothing = opt[1] end
+        })
+        AimbotTab:CreateDropdown({
+            Name = "Toggle Mode",
+            Options = {"Hold", "Toggle"},
+            CurrentOption = {getgenv().AimbotSettings.Mode},
+            Callback = function(opt) getgenv().AimbotSettings.Mode = opt[1] end
+        })
+        AimbotTab:CreateDropdown({
+            Name = "Target Part",
+            Options = {"Head", "Torso"},
+            CurrentOption = {getgenv().AimbotSettings.TargetPart},
+            Callback = function(opt) getgenv().AimbotSettings.TargetPart = opt[1] end
+        })
+
+        local aimActive = false
+        UserInputService.InputBegan:Connect(function(input, processed)
+            if processed then return end
+            if getgenv().AimbotSettings.Mode == "Hold" and input.UserInputType == Enum.UserInputType.MouseButton2 then
+                aimActive = true
+            elseif getgenv().AimbotSettings.Mode == "Toggle" and input.UserInputType == Enum.UserInputType.MouseButton2 then
+                aimActive = not aimActive
+            end
+        end)
+        UserInputService.InputEnded:Connect(function(input)
+            if getgenv().AimbotSettings.Mode == "Hold" and input.UserInputType == Enum.UserInputType.MouseButton2 then
+                aimActive = false
+            end
+        end)
+
+        local function smoothingFactorFromSetting()
+            local s = getgenv().AimbotSettings.Smoothing
+            return (s == "Off" and 1) or (s == "Low" and 0.15) or (s == "Medium" and 0.08) or (s == "High" and 0.03) or 0.1
+        end
+
+        local function getClosest()
+            local closest, shortestDist = nil, math.huge
+            local mousePos = UserInputService:GetMouseLocation()
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr == LocalPlayer then continue end
+                local char = plr.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                if hum and root and hum.Health > 0 then
+                    if getgenv().AimbotSettings.TeamCheck and plr.Team == LocalPlayer.Team then continue end
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(root.Position)
+                    if not onScreen then continue end
+                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(mousePos.X, mousePos.Y)).Magnitude
+                    if dist < shortestDist and dist <= getgenv().CircleSettings.FOV then
+                        closest = plr
+                        shortestDist = dist
+                    end
+                end
+            end
+            return closest
+        end
+
+        aimConn = RunService.RenderStepped:Connect(function()
+            if not getgenv().AimbotSettings.Enabled then return end
+            if getgenv().AimbotSettings.Mode == "Hold" and not aimActive then return end
+            if getgenv().AimbotSettings.Mode == "Toggle" and not aimActive then return end
+            local target = getClosest()
+            if not target or not target.Character then return end
+            local hum = target.Character:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then return end
+            local finalPart = getAimPartFromName(target.Character, getgenv().AimbotSettings.TargetPart)
+            if not finalPart then return end
+            if getgenv().AimbotSettings.SmartAimbot then
+                local origin = Camera.CFrame.Position
+                local direction = (finalPart.Position - origin)
+                local rayParams = RaycastParams.new()
+                rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+                rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
+                local result = workspace:Raycast(origin, direction, rayParams)
+                if result and result.Instance and result.Instance:IsA("BasePart") and not result.Instance:IsDescendantOf(target.Character) then
+                    local headPart = target.Character:FindFirstChild("Head")
+                    if headPart and finalPart ~= headPart then
+                        finalPart = headPart
+                    end
+                end
+            end
+            local targetPos = finalPart.Position
+            local hrp = target.Character:FindFirstChild("HumanoidRootPart")
+            if hrp and getgenv().AimbotSettings.Prediction ~= "Off" then
+                local mult = (getgenv().AimbotSettings.Prediction == "Low" and 0.06)
+                    or (getgenv().AimbotSettings.Prediction == "Medium" and 0.11)
+                    or (getgenv().AimbotSettings.Prediction == "High" and 0.2)
+                    or 0
+                targetPos = targetPos + hrp.Velocity * mult
+            end
+            local camCF = Camera.CFrame
+            local wanted = CFrame.new(camCF.Position, targetPos)
+            Camera.CFrame = camCF:Lerp(wanted, smoothingFactorFromSetting())
+        end)
+        table.insert(getgenv().Connections, aimConn)
+    end
+
+    -- ======= Circle UI & drawing (mobile safe) =======
+    local mainCircle = nil
+    local circleConn = nil
+    if not isMobile then
+        CircleTab:CreateSection("Circle")
+        CircleTab:CreateSlider({
+            Name = "FOV",
+            Range = {50, 500},
+            Increment = 10,
+            CurrentValue = getgenv().CircleSettings.FOV,
+            Callback = function(v) getgenv().CircleSettings.FOV = v end
+        })
+        CircleTab:CreateColorPicker({
+            Name = "Circle Color",
+            Color = getgenv().CircleSettings.Color,
+            Callback = function(v) getgenv().CircleSettings.Color = v end
+        })
+        CircleTab:CreateToggle({
+            Name = "Rainbow Circle",
+            CurrentValue = getgenv().CircleSettings.Rainbow,
+            Callback = function(v) getgenv().CircleSettings.Rainbow = v end
+        })
+        CircleTab:CreateSlider({
+            Name = "Thickness",
+            Range = {1, 10},
+            Increment = 1,
+            CurrentValue = getgenv().CircleSettings.Thickness,
+            Callback = function(v) getgenv().CircleSettings.Thickness = v end
+        })
+        CircleTab:CreateToggle({
+            Name = "Show Circle",
+            CurrentValue = getgenv().CircleSettings.Visible,
+            Callback = function(v)
+                getgenv().CircleSettings.Visible = v
+                if mainCircle then pcall(function() mainCircle.Visible = v end) end
+            end
+        })
+
+        local function CreateMainCircle()
+            DestroyAllCircles()
+            local m = UserInputService:GetMouseLocation()
+            local c = Drawing.new("Circle")
+            c.NumSides = 100
+            c.Filled = false
+            c.Visible = getgenv().CircleSettings.Visible
+            c.Thickness = getgenv().CircleSettings.Thickness
+            c.Radius = getgenv().CircleSettings.FOV
+            c.Position = Vector2.new(m.X, m.Y)
+            c.Color = getgenv().CircleSettings.Color
+            table.insert(getgenv().ActiveCircles, c)
+            return c
+        end
+
+        mainCircle = CreateMainCircle()
+        circleConn = RunService.RenderStepped:Connect(function()
+            if not mainCircle then return end
+            local m = UserInputService:GetMouseLocation()
+            pcall(function()
+                mainCircle.Position = Vector2.new(m.X, m.Y)
+                mainCircle.Radius = getgenv().CircleSettings.FOV
+                mainCircle.Thickness = getgenv().CircleSettings.Thickness
+                mainCircle.Visible = getgenv().CircleSettings.Visible
+                if getgenv().CircleSettings.Rainbow then
+                    local hue = (tick() / (getgenv().CircleSettings.RainbowSpeed > 0 and getgenv().CircleSettings.RainbowSpeed or 5)) % 1
+                    mainCircle.Color = Color3.fromHSV(hue, 1, 1)
                 else
-                    pcall(function()
-                        getgenv().ESPBoxes[plr].Adornee = root
-                        getgenv().ESPBoxes[plr].Color3 = getgenv().ESPSettings.Color
-                    end)
+                    mainCircle.Color = getgenv().CircleSettings.Color
+                end
+            end)
+        end)
+        table.insert(getgenv().Connections, circleConn)
+    end
+
+    -- ======= ESP UI & Box ESP =======
+    ESPTab:CreateSection("ESP")
+    ESPTab:CreateToggle({
+        Name = "Enable ESP",
+        CurrentValue = getgenv().ESPSettings.Enabled,
+        Callback = function(v)
+            getgenv().ESPSettings.Enabled = v
+            if not v then ClearESPBoxes() end
+        end
+    })
+    ESPTab:CreateToggle({
+        Name = "Skeleton ESP",
+        CurrentValue = getgenv().ESPSettings.SkeletonEnabled,
+        Callback = function(v)
+            getgenv().ESPSettings.SkeletonEnabled = v
+            for plr, conn in pairs(getgenv().SkeletonLines) do
+                for _, line in pairs(conn.Limbs) do
+                    pcall(function() line.Transparency = v and 1 or 0 end)
+                end
+            end
+        end
+    })
+    ESPTab:CreateColorPicker({
+        Name = "ESP Color",
+        Color = getgenv().ESPSettings.Color,
+        Callback = function(v)
+            getgenv().ESPSettings.Color = v
+            for _, b in pairs(getgenv().ESPBoxes) do
+                pcall(function() b.Color3 = v end)
+            end
+            for _, conn in pairs(getgenv().SkeletonLines) do
+                for _, line in pairs(conn.Limbs) do
+                    pcall(function() line.Color = v end)
+                end
+            end
+        end
+    })
+    ESPTab:CreateSlider({
+        Name = "Max Distance",
+        Range = {50, 2000},
+        Increment = 50,
+        CurrentValue = getgenv().ESPSettings.MaxDistance,
+        Callback = function(v) getgenv().ESPSettings.MaxDistance = v end
+    })
+
+    -- Box ESP core
+    local function updateBoxESP()
+        if not getgenv().ESPSettings.Enabled then
+            ClearESPBoxes()
+            return
+        end
+        local lpRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local refPos = lpRoot and lpRoot.Position or Camera.CFrame.Position
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr == LocalPlayer then continue end
+            local char = plr.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if hum and root and hum.Health > 0 then
+                local dist = (root.Position - refPos).Magnitude
+                if dist <= getgenv().ESPSettings.MaxDistance then
+                    if not getgenv().ESPBoxes[plr] then
+                        local success, err = pcall(function()
+                            local b = Instance.new("BoxHandleAdornment")
+                            b.Size = Vector3.new(5, 7, 2)
+                            b.CFrame = CFrame.new(0, 1, 0)
+                            b.Adornee = root
+                            b.Color3 = getgenv().ESPSettings.Color
+                            b.Transparency = 0.5
+                            b.AlwaysOnTop = true
+                            b.ZIndex = 10
+                            b.Parent = CoreGui
+                            getgenv().ESPBoxes[plr] = b
+                            print("Box ESP created for", plr.Name)
+                        end)
+                        if not success then
+                            warn("Box ESP creation failed for", plr.Name, ":", err)
+                        end
+                    else
+                        pcall(function()
+                            getgenv().ESPBoxes[plr].Color3 = getgenv().ESPSettings.Color
+                            getgenv().ESPBoxes[plr].Adornee = root
+                            print("Box ESP updated for", plr.Name)
+                        end)
+                    end
+                else
+                    if getgenv().ESPBoxes[plr] then
+                        pcall(function()
+                            getgenv().ESPBoxes[plr]:Destroy()
+                            getgenv().ESPBoxes[plr] = nil
+                            print("Box ESP removed for", plr.Name, ": Out of range")
+                        end)
+                    end
                 end
             else
                 if getgenv().ESPBoxes[plr] then
-                    pcall(function() getgenv().ESPBoxes[plr]:Destroy() end)
-                    getgenv().ESPBoxes[plr] = nil
+                    pcall(function()
+                        getgenv().ESPBoxes[plr]:Destroy()
+                        getgenv().ESPBoxes[plr] = nil
+                        print("Box ESP removed for", plr.Name, ": Invalid character")
+                    end)
                 end
             end
+        end
+    end
+
+    local boxESPConn = RunService.RenderStepped:Connect(updateBoxESP)
+    table.insert(getgenv().Connections, boxESPConn)
+
+    -- Skeleton ESP core (updated with transparency toggle)
+    local function DrawLine()
+        local l
+        local success, err = pcall(function()
+            l = Drawing.new("Line")
+            l.Visible = true
+            l.From = Vector2.new(0, 0)
+            l.To = Vector2.new(1, 1)
+            l.Color = getgenv().ESPSettings.Color
+            l.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+        end)
+        if not success then
+            warn("DrawLine failed:", err)
+        end
+        return l
+    end
+
+    local function DrawSkeletonESP(plr)
+        if plr == LocalPlayer then return end
+        repeat task.wait() until plr.Character and plr.Character:FindFirstChild("Humanoid")
+        local char = plr.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then
+            return
+        end
+        local R15 = (char.Humanoid.RigType == Enum.HumanoidRigType.R15) and true or false
+        local limbs = {}
+        if R15 then
+            limbs = {
+                Head_UpperTorso = DrawLine(),
+                UpperTorso_LowerTorso = DrawLine(),
+                UpperTorso_LeftUpperArm = DrawLine(),
+                LeftUpperArm_LeftLowerArm = DrawLine(),
+                LeftLowerArm_LeftHand = DrawLine(),
+                UpperTorso_RightUpperArm = DrawLine(),
+                RightUpperArm_RightLowerArm = DrawLine(),
+                RightLowerArm_RightHand = DrawLine(),
+                LowerTorso_LeftUpperLeg = DrawLine(),
+                LeftUpperLeg_LeftLowerLeg = DrawLine(),
+                LeftLowerLeg_LeftFoot = DrawLine(),
+                LowerTorso_RightUpperLeg = DrawLine(),
+                RightUpperLeg_RightLowerLeg = DrawLine(),
+                RightLowerLeg_RightFoot = DrawLine(),
+            }
         else
-            if getgenv().ESPBoxes[plr] then
-                pcall(function() getgenv().ESPBoxes[plr]:Destroy() end)
+            limbs = {
+                Head_Spine = DrawLine(),
+                Spine = DrawLine(),
+                LeftArm = DrawLine(),
+                LeftArm_UpperTorso = DrawLine(),
+                RightArm = DrawLine(),
+                RightArm_UpperTorso = DrawLine(),
+                LeftLeg = DrawLine(),
+                LeftLeg_LowerTorso = DrawLine(),
+                RightLeg = DrawLine(),
+                RightLeg_LowerTorso = DrawLine()
+            }
+        end
+        
+        for lineName, line in pairs(limbs) do
+            if line then
+                print("Skeleton line", lineName, "created for", plr.Name)
+            else
+                print("Skeleton line", lineName, "skipped for", plr.Name, ": Missing parts")
+            end
+        end
+        
+        getgenv().SkeletonLines[plr] = { Limbs = limbs, Connection = nil }
+        print("Skeleton lines initialized for", plr.Name)
+        
+        local conn
+        conn = RunService.RenderStepped:Connect(function()
+            if plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character.Humanoid.Health > 0 then
+                local success, err = pcall(function()
+                    local root = plr.Character.HumanoidRootPart
+                    local dist = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and (root.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or 1000
+                    if dist > getgenv().ESPSettings.MaxDistance then
+                        for _, line in pairs(limbs) do
+                            if line then
+                                line.Transparency = 0
+                            end
+                        end
+                        print("Skeleton lines updated for", plr.Name, ": Out of range")
+                        return
+                    end
+                    
+                    local _, vis = Camera:WorldToViewportPoint(root.Position)
+                    if vis then
+                        if R15 then
+                            local head = plr.Character:FindFirstChild("Head")
+                            local upperTorso = plr.Character:FindFirstChild("UpperTorso")
+                            local lowerTorso = plr.Character:FindFirstChild("LowerTorso")
+                            local leftUpperArm = plr.Character:FindFirstChild("LeftUpperArm")
+                            local leftLowerArm = plr.Character:FindFirstChild("LeftLowerArm")
+                            local leftHand = plr.Character:FindFirstChild("LeftHand")
+                            local rightUpperArm = plr.Character:FindFirstChild("RightUpperArm")
+                            local rightLowerArm = plr.Character:FindFirstChild("RightLowerArm")
+                            local rightHand = plr.Character:FindFirstChild("RightHand")
+                            local leftUpperLeg = plr.Character:FindFirstChild("LeftUpperLeg")
+                            local leftLowerLeg = plr.Character:FindFirstChild("LeftLowerLeg")
+                            local leftFoot = plr.Character:FindFirstChild("LeftFoot")
+                            local rightUpperLeg = plr.Character:FindFirstChild("RightUpperLeg")
+                            local rightLowerLeg = plr.Character:FindFirstChild("RightLowerLeg")
+                            local rightFoot = plr.Character:FindFirstChild("RightFoot")
+                            
+                            if head and upperTorso and limbs.Head_UpperTorso then
+                                local headPos = Camera:WorldToViewportPoint(head.Position)
+                                local torsoPos = Camera:WorldToViewportPoint(upperTorso.Position)
+                                limbs.Head_UpperTorso.From = Vector2.new(headPos.X, headPos.Y)
+                                limbs.Head_UpperTorso.To = Vector2.new(torsoPos.X, torsoPos.Y)
+                                limbs.Head_UpperTorso.Color = getgenv().ESPSettings.Color
+                                limbs.Head_UpperTorso.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if upperTorso and lowerTorso and limbs.UpperTorso_LowerTorso then
+                                local upperPos = Camera:WorldToViewportPoint(upperTorso.Position)
+                                local lowerPos = Camera:WorldToViewportPoint(lowerTorso.Position)
+                                limbs.UpperTorso_LowerTorso.From = Vector2.new(upperPos.X, upperPos.Y)
+                                limbs.UpperTorso_LowerTorso.To = Vector2.new(lowerPos.X, lowerPos.Y)
+                                limbs.UpperTorso_LowerTorso.Color = getgenv().ESPSettings.Color
+                                limbs.UpperTorso_LowerTorso.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if upperTorso and leftUpperArm and limbs.UpperTorso_LeftUpperArm then
+                                local torsoPos = Camera:WorldToViewportPoint(upperTorso.Position)
+                                local armPos = Camera:WorldToViewportPoint(leftUpperArm.Position)
+                                limbs.UpperTorso_LeftUpperArm.From = Vector2.new(torsoPos.X, torsoPos.Y)
+                                limbs.UpperTorso_LeftUpperArm.To = Vector2.new(armPos.X, armPos.Y)
+                                limbs.UpperTorso_LeftUpperArm.Color = getgenv().ESPSettings.Color
+                                limbs.UpperTorso_LeftUpperArm.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if leftUpperArm and leftLowerArm and limbs.LeftUpperArm_LeftLowerArm then
+                                local upperPos = Camera:WorldToViewportPoint(leftUpperArm.Position)
+                                local lowerPos = Camera:WorldToViewportPoint(leftLowerArm.Position)
+                                limbs.LeftUpperArm_LeftLowerArm.From = Vector2.new(upperPos.X, upperPos.Y)
+                                limbs.LeftUpperArm_LeftLowerArm.To = Vector2.new(lowerPos.X, lowerPos.Y)
+                                limbs.LeftUpperArm_LeftLowerArm.Color = getgenv().ESPSettings.Color
+                                limbs.LeftUpperArm_LeftLowerArm.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if leftLowerArm and leftHand and limbs.LeftLowerArm_LeftHand then
+                                local lowerPos = Camera:WorldToViewportPoint(leftLowerArm.Position)
+                                local handPos = Camera:WorldToViewportPoint(leftHand.Position)
+                                limbs.LeftLowerArm_LeftHand.From = Vector2.new(lowerPos.X, lowerPos.Y)
+                                limbs.LeftLowerArm_LeftHand.To = Vector2.new(handPos.X, handPos.Y)
+                                limbs.LeftLowerArm_LeftHand.Color = getgenv().ESPSettings.Color
+                                limbs.LeftLowerArm_LeftHand.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if upperTorso and rightUpperArm and limbs.UpperTorso_RightUpperArm then
+                                local torsoPos = Camera:WorldToViewportPoint(upperTorso.Position)
+                                local armPos = Camera:WorldToViewportPoint(rightUpperArm.Position)
+                                limbs.UpperTorso_RightUpperArm.From = Vector2.new(torsoPos.X, torsoPos.Y)
+                                limbs.UpperTorso_RightUpperArm.To = Vector2.new(armPos.X, armPos.Y)
+                                limbs.UpperTorso_RightUpperArm.Color = getgenv().ESPSettings.Color
+                                limbs.UpperTorso_RightUpperArm.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if rightUpperArm and rightLowerArm and limbs.RightUpperArm_RightLowerArm then
+                                local upperPos = Camera:WorldToViewportPoint(rightUpperArm.Position)
+                                local lowerPos = Camera:WorldToViewportPoint(rightLowerArm.Position)
+                                limbs.RightUpperArm_RightLowerArm.From = Vector2.new(upperPos.X, upperPos.Y)
+                                limbs.RightUpperArm_RightLowerArm.To = Vector2.new(lowerPos.X, lowerPos.Y)
+                                limbs.RightUpperArm_RightLowerArm.Color = getgenv().ESPSettings.Color
+                                limbs.RightUpperArm_RightLowerArm.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if rightLowerArm and rightHand and limbs.RightLowerArm_RightHand then
+                                local lowerPos = Camera:WorldToViewportPoint(rightLowerArm.Position)
+                                local handPos = Camera:WorldToViewportPoint(rightHand.Position)
+                                limbs.RightLowerArm_RightHand.From = Vector2.new(lowerPos.X, lowerPos.Y)
+                                limbs.RightLowerArm_RightHand.To = Vector2.new(handPos.X, handPos.Y)
+                                limbs.RightLowerArm_RightHand.Color = getgenv().ESPSettings.Color
+                                limbs.RightLowerArm_RightHand.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if lowerTorso and leftUpperLeg and limbs.LowerTorso_LeftUpperLeg then
+                                local torsoPos = Camera:WorldToViewportPoint(lowerTorso.Position)
+                                local legPos = Camera:WorldToViewportPoint(leftUpperLeg.Position)
+                                limbs.LowerTorso_LeftUpperLeg.From = Vector2.new(torsoPos.X, torsoPos.Y)
+                                limbs.LowerTorso_LeftUpperLeg.To = Vector2.new(legPos.X, legPos.Y)
+                                limbs.LowerTorso_LeftUpperLeg.Color = getgenv().ESPSettings.Color
+                                limbs.LowerTorso_LeftUpperLeg.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if leftUpperLeg and leftLowerLeg and limbs.LeftUpperLeg_LeftLowerLeg then
+                                local upperPos = Camera:WorldToViewportPoint(leftUpperLeg.Position)
+                                local lowerPos = Camera:WorldToViewportPoint(leftLowerLeg.Position)
+                                limbs.LeftUpperLeg_LeftLowerLeg.From = Vector2.new(upperPos.X, upperPos.Y)
+                                limbs.LeftUpperLeg_LeftLowerLeg.To = Vector2.new(lowerPos.X, lowerPos.Y)
+                                limbs.LeftUpperLeg_LeftLowerLeg.Color = getgenv().ESPSettings.Color
+                                limbs.LeftUpperLeg_LeftLowerLeg.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if leftLowerLeg and leftFoot and limbs.LeftLowerLeg_LeftFoot then
+                                local lowerPos = Camera:WorldToViewportPoint(leftLowerLeg.Position)
+                                local footPos = Camera:WorldToViewportPoint(leftFoot.Position)
+                                limbs.LeftLowerLeg_LeftFoot.From = Vector2.new(lowerPos.X, lowerPos.Y)
+                                limbs.LeftLowerLeg_LeftFoot.To = Vector2.new(footPos.X, footPos.Y)
+                                limbs.LeftLowerLeg_LeftFoot.Color = getgenv().ESPSettings.Color
+                                limbs.LeftLowerLeg_LeftFoot.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if lowerTorso and rightUpperLeg and limbs.LowerTorso_RightUpperLeg then
+                                local torsoPos = Camera:WorldToViewportPoint(lowerTorso.Position)
+                                local legPos = Camera:WorldToViewportPoint(rightUpperLeg.Position)
+                                limbs.LowerTorso_RightUpperLeg.From = Vector2.new(torsoPos.X, torsoPos.Y)
+                                limbs.LowerTorso_RightUpperLeg.To = Vector2.new(legPos.X, legPos.Y)
+                                limbs.LowerTorso_RightUpperLeg.Color = getgenv().ESPSettings.Color
+                                limbs.LowerTorso_RightUpperLeg.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if rightUpperLeg and rightLowerLeg and limbs.RightUpperLeg_RightLowerLeg then
+                                local upperPos = Camera:WorldToViewportPoint(rightUpperLeg.Position)
+                                local lowerPos = Camera:WorldToViewportPoint(rightLowerLeg.Position)
+                                limbs.RightUpperLeg_RightLowerLeg.From = Vector2.new(upperPos.X, upperPos.Y)
+                                limbs.RightUpperLeg_RightLowerLeg.To = Vector2.new(lowerPos.X, lowerPos.Y)
+                                limbs.RightUpperLeg_RightLowerLeg.Color = getgenv().ESPSettings.Color
+                                limbs.RightUpperLeg_RightLowerLeg.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if rightLowerLeg and rightFoot and limbs.RightLowerLeg_RightFoot then
+                                local lowerPos = Camera:WorldToViewportPoint(rightLowerLeg.Position)
+                                local footPos = Camera:WorldToViewportPoint(rightFoot.Position)
+                                limbs.RightLowerLeg_RightFoot.From = Vector2.new(lowerPos.X, lowerPos.Y)
+                                limbs.RightLowerLeg_RightFoot.To = Vector2.new(footPos.X, footPos.Y)
+                                limbs.RightLowerLeg_RightFoot.Color = getgenv().ESPSettings.Color
+                                limbs.RightLowerLeg_RightFoot.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                        else
+                            local head = plr.Character:FindFirstChild("Head")
+                            local torso = plr.Character:FindFirstChild("Torso")
+                            local leftArm = plr.Character:FindFirstChild("Left Arm")
+                            local rightArm = plr.Character:FindFirstChild("Right Arm")
+                            local leftLeg = plr.Character:FindFirstChild("Left Leg")
+                            local rightLeg = plr.Character:FindFirstChild("Right Leg")
+                            
+                            if head and torso and limbs.Head_Spine then
+                                local headPos = Camera:WorldToViewportPoint(head.Position)
+                                local torsoHeight = torso.Size.Y/2 - 0.2
+                                local upperTorso = Camera:WorldToViewportPoint((torso.CFrame * CFrame.new(0, torsoHeight, 0)).p)
+                                limbs.Head_Spine.From = Vector2.new(headPos.X, headPos.Y)
+                                limbs.Head_Spine.To = Vector2.new(upperTorso.X, upperTorso.Y)
+                                limbs.Head_Spine.Color = getgenv().ESPSettings.Color
+                                limbs.Head_Spine.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if torso and limbs.Spine then
+                                local torsoHeight = torso.Size.Y/2 - 0.2
+                                local upperTorso = Camera:WorldToViewportPoint((torso.CFrame * CFrame.new(0, torsoHeight, 0)).p)
+                                local lowerTorso = Camera:WorldToViewportPoint((torso.CFrame * CFrame.new(0, -torsoHeight, 0)).p)
+                                limbs.Spine.From = Vector2.new(upperTorso.X, upperTorso.Y)
+                                limbs.Spine.To = Vector2.new(lowerTorso.X, lowerTorso.Y)
+                                limbs.Spine.Color = getgenv().ESPSettings.Color
+                                limbs.Spine.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if torso and leftArm and limbs.LeftArm_UpperTorso then
+                                local torsoHeight = torso.Size.Y/2 - 0.2
+                                local upperTorso = Camera:WorldToViewportPoint((torso.CFrame * CFrame.new(0, torsoHeight, 0)).p)
+                                local armPos = Camera:WorldToViewportPoint(leftArm.Position)
+                                limbs.LeftArm_UpperTorso.From = Vector2.new(upperTorso.X, upperTorso.Y)
+                                limbs.LeftArm_UpperTorso.To = Vector2.new(armPos.X, armPos.Y)
+                                limbs.LeftArm_UpperTorso.Color = getgenv().ESPSettings.Color
+                                limbs.LeftArm_UpperTorso.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if leftArm and limbs.LeftArm then
+                                local armHeight = leftArm.Size.Y/2 - 0.2
+                                local upperArm = Camera:WorldToViewportPoint((leftArm.CFrame * CFrame.new(0, armHeight, 0)).p)
+                                local lowerArm = Camera:WorldToViewportPoint((leftArm.CFrame * CFrame.new(0, -armHeight, 0)).p)
+                                limbs.LeftArm.From = Vector2.new(upperArm.X, upperArm.Y)
+                                limbs.LeftArm.To = Vector2.new(lowerArm.X, lowerArm.Y)
+                                limbs.LeftArm.Color = getgenv().ESPSettings.Color
+                                limbs.LeftArm.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if torso and rightArm and limbs.RightArm_UpperTorso then
+                                local torsoHeight = torso.Size.Y/2 - 0.2
+                                local upperTorso = Camera:WorldToViewportPoint((torso.CFrame * CFrame.new(0, torsoHeight, 0)).p)
+                                local armPos = Camera:WorldToViewportPoint(rightArm.Position)
+                                limbs.RightArm_UpperTorso.From = Vector2.new(upperTorso.X, upperTorso.Y)
+                                limbs.RightArm_UpperTorso.To = Vector2.new(armPos.X, armPos.Y)
+                                limbs.RightArm_UpperTorso.Color = getgenv().ESPSettings.Color
+                                limbs.RightArm_UpperTorso.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if rightArm and limbs.RightArm then
+                                local armHeight = rightArm.Size.Y/2 - 0.2
+                                local upperArm = Camera:WorldToViewportPoint((rightArm.CFrame * CFrame.new(0, armHeight, 0)).p)
+                                local lowerArm = Camera:WorldToViewportPoint((rightArm.CFrame * CFrame.new(0, -armHeight, 0)).p)
+                                limbs.RightArm.From = Vector2.new(upperArm.X, upperArm.Y)
+                                limbs.RightArm.To = Vector2.new(lowerArm.X, lowerArm.Y)
+                                limbs.RightArm.Color = getgenv().ESPSettings.Color
+                                limbs.RightArm.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if torso and leftLeg and limbs.LeftLeg_LowerTorso then
+                                local torsoHeight = torso.Size.Y/2 - 0.2
+                                local lowerTorso = Camera:WorldToViewportPoint((torso.CFrame * CFrame.new(0, -torsoHeight, 0)).p)
+                                local legPos = Camera:WorldToViewportPoint(leftLeg.Position)
+                                limbs.LeftLeg_LowerTorso.From = Vector2.new(lowerTorso.X, lowerTorso.Y)
+                                limbs.LeftLeg_LowerTorso.To = Vector2.new(legPos.X, legPos.Y)
+                                limbs.LeftLeg_LowerTorso.Color = getgenv().ESPSettings.Color
+                                limbs.LeftLeg_LowerTorso.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if leftLeg and limbs.LeftLeg then
+                                local legHeight = leftLeg.Size.Y/2 - 0.2
+                                local upperLeg = Camera:WorldToViewportPoint((leftLeg.CFrame * CFrame.new(0, legHeight, 0)).p)
+                                local lowerLeg = Camera:WorldToViewportPoint((leftLeg.CFrame * CFrame.new(0, -legHeight, 0)).p)
+                                limbs.LeftLeg.From = Vector2.new(upperLeg.X, upperLeg.Y)
+                                limbs.LeftLeg.To = Vector2.new(lowerLeg.X, lowerLeg.Y)
+                                limbs.LeftLeg.Color = getgenv().ESPSettings.Color
+                                limbs.LeftLeg.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if torso and rightLeg and limbs.RightLeg_LowerTorso then
+                                local torsoHeight = torso.Size.Y/2 - 0.2
+                                local lowerTorso = Camera:WorldToViewportPoint((torso.CFrame * CFrame.new(0, -torsoHeight, 0)).p)
+                                local legPos = Camera:WorldToViewportPoint(rightLeg.Position)
+                                limbs.RightLeg_LowerTorso.From = Vector2.new(lowerTorso.X, lowerTorso.Y)
+                                limbs.RightLeg_LowerTorso.To = Vector2.new(legPos.X, legPos.Y)
+                                limbs.RightLeg_LowerTorso.Color = getgenv().ESPSettings.Color
+                                limbs.RightLeg_LowerTorso.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                            if rightLeg and limbs.RightLeg then
+                                local legHeight = rightLeg.Size.Y/2 - 0.2
+                                local upperLeg = Camera:WorldToViewportPoint((rightLeg.CFrame * CFrame.new(0, legHeight, 0)).p)
+                                local lowerLeg = Camera:WorldToViewportPoint((rightLeg.CFrame * CFrame.new(0, -legHeight, 0)).p)
+                                limbs.RightLeg.From = Vector2.new(upperLeg.X, upperLeg.Y)
+                                limbs.RightLeg.To = Vector2.new(lowerLeg.X, lowerLeg.Y)
+                                limbs.RightLeg.Color = getgenv().ESPSettings.Color
+                                limbs.RightLeg.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
+                            end
+                        end
+                        print("Skeleton lines updated for", plr.Name, ": Visible")
+                    else
+                        for _, line in pairs(limbs) do
+                            if line then
+                                line.Transparency = 0
+                            end
+                        end
+                        print("Skeleton lines updated for", plr.Name, ": Not visible")
+                    end
+                end)
+                if not success then
+                    warn("Skeleton ESP update failed for", plr.Name, ":", err)
+                    for _, line in pairs(limbs) do
+                        if line then line:Remove() end
+                    end
+                    getgenv().SkeletonLines[plr] = nil
+                    conn:Disconnect()
+                end
+            else
+                for _, line in pairs(limbs) do
+                    if line then
+                        line.Transparency = 0
+                    end
+                end
+                if not Players:FindFirstChild(plr.Name) then
+                    for _, line in pairs(limbs) do
+                        if line then line:Remove() end
+                    end
+                    getgenv().SkeletonLines[plr] = nil
+                    conn:Disconnect()
+                    print("Skeleton lines removed for", plr.Name, ": Player left")
+                end
+            end
+        end)
+        getgenv().SkeletonLines[plr].Connection = conn
+    end
+
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            DrawSkeletonESP(plr)
+        end
+    end
+    Players.PlayerAdded:Connect(function(plr)
+        if plr ~= LocalPlayer then
+            DrawSkeletonESP(plr)
+        end
+    end)
+    Players.PlayerRemoving:Connect(function(plr)
+        if getgenv().ESPBoxes[plr] then
+            pcall(function()
+                getgenv().ESPBoxes[plr]:Destroy()
                 getgenv().ESPBoxes[plr] = nil
+                print("Box ESP removed for", plr.Name, ": Player left")
+            end)
+        end
+        if getgenv().SkeletonLines[plr] then
+            pcall(function()
+                if getgenv().SkeletonLines[plr].Connection then
+                    getgenv().SkeletonLines[plr].Connection:Disconnect()
+                end
+                for _, line in pairs(getgenv().SkeletonLines[plr].Limbs) do
+                    if line then line:Remove() end
+                end
+                getgenv().SkeletonLines[plr] = nil
+                print("Skeleton lines removed for", plr.Name, ": Player left")
+            end)
+        end
+        if getgenv().AntiFlingParts[plr] then
+            pcall(function()
+                getgenv().AntiFlingParts[plr]:Destroy()
+                getgenv().AntiFlingParts[plr] = nil
+                print("Anti-Fling part removed for", plr.Name)
+            end)
+        end
+        if getgenv().HitboxAdornments[plr] then
+            pcall(function()
+                getgenv().HitboxAdornments[plr]:Destroy()
+                getgenv().HitboxAdornments[plr] = nil
+                print("Hitbox adornment removed for", plr.Name)
+            end)
+        end
+    end)
+
+    -- ======= Player UI =======
+    PlayerTab:CreateSection("Player")
+    local WS_Toggle = PlayerTab:CreateToggle({
+        Name = "Enable Walkspeed",
+        CurrentValue = getgenv().PlayerSettings.WalkspeedEnabled,
+        Callback = function(v)
+            getgenv().PlayerSettings.WalkspeedEnabled = v
+            if not v and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+                pcall(function() LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = 16 end)
+            end
+        end
+    })
+    local WS_Slider = PlayerTab:CreateSlider({
+        Name = "Walkspeed",
+        Range = {1, 100},
+        Increment = 1,
+        CurrentValue = getgenv().PlayerSettings.Walkspeed,
+        Callback = function(v) getgenv().PlayerSettings.Walkspeed = v end
+    })
+    PlayerTab:CreateButton({
+        Name = "Reset Walkspeed",
+        Callback = function()
+            getgenv().PlayerSettings.WalkspeedEnabled = false
+            getgenv().PlayerSettings.Walkspeed = 16
+            pcall(function() WS_Slider:Set(16) end)
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+                pcall(function() LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = 16 end)
+            end
+        end
+    })
+
+    local JP_Toggle = PlayerTab:CreateToggle({
+        Name = "Enable Jump Power",
+        CurrentValue = getgenv().PlayerSettings.JumpPowerEnabled,
+        Callback = function(v)
+            getgenv().PlayerSettings.JumpPowerEnabled = v
+            if not v and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+                pcall(function() LocalPlayer.Character:FindFirstChildOfClass("Humanoid").JumpPower = 50 end)
+            end
+        end
+    })
+    local JP_Slider = PlayerTab:CreateSlider({
+        Name = "Jump Power",
+        Range = {50, 150},
+        Increment = 10,
+        CurrentValue = getgenv().PlayerSettings.JumpPower,
+        Callback = function(v) getgenv().PlayerSettings.JumpPower = v end
+    })
+    PlayerTab:CreateButton({
+        Name = "Reset Jump Power",
+        Callback = function()
+            getgenv().PlayerSettings.JumpPowerEnabled = false
+            getgenv().PlayerSettings.JumpPower = 50
+            pcall(function() JP_Slider:Set(50) end)
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+                pcall(function() LocalPlayer.Character:FindFirstChildOfClass("Humanoid").JumpPower = 50 end)
+            end
+        end
+    })
+
+    local InfJumpToggle = PlayerTab:CreateToggle({
+        Name = "Infinite Jump",
+        CurrentValue = getgenv().PlayerSettings.InfiniteJump,
+        Callback = function(v) getgenv().PlayerSettings.InfiniteJump = v end
+    })
+
+    local NoclipConn = nil
+    PlayerTab:CreateSection("Extras")
+    local NoclipToggle = PlayerTab:CreateToggle({
+        Name = "Noclip",
+        CurrentValue = getgenv().PlayerSettings.NoclipEnabled,
+        Callback = function(v)
+            getgenv().PlayerSettings.NoclipEnabled = v
+            if v then
+                if NoclipConn then pcall(function() NoclipConn:Disconnect() end) end
+                NoclipConn = RunService.Stepped:Connect(function()
+                    if LocalPlayer.Character then
+                        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                pcall(function() part.CanCollide = false end)
+                            end
+                        end
+                    end
+                end)
+                table.insert(getgenv().Connections, NoclipConn)
+            else
+                if NoclipConn then pcall(function() NoclipConn:Disconnect() end) end
+            end
+        end
+    })
+
+    local bodyVelocity, bodyGyro = nil, nil
+    local flyConnection = nil
+    local function toggleFly(enabled)
+        if enabled then
+            local character = LocalPlayer.Character
+            if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+            local hrp = character.HumanoidRootPart
+            bodyVelocity = Instance.new("BodyVelocity")
+            bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            bodyVelocity.Parent = hrp
+            bodyGyro = Instance.new("BodyGyro")
+            bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+            bodyGyro.CFrame = CFrame.new(0, 0, 0)
+            bodyGyro.Parent = hrp
+            flyConnection = RunService.RenderStepped:Connect(function()
+                if not getgenv().PlayerSettings.FlyEnabled then return end
+                local hrp = character.HumanoidRootPart
+                if not hrp then return end
+                local camera = workspace.CurrentCamera
+                local direction = Vector3.new()
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                    direction = direction + camera.CFrame.LookVector
+                end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                    direction = direction - camera.CFrame.LookVector
+                end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                    direction = direction + camera.CFrame.RightVector
+                end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                    direction = direction - camera.CFrame.RightVector
+                end
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                    direction = direction + Vector3.new(0, 1, 0)
+                end
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+                    direction = direction - Vector3.new(0, 1, 0)
+                end
+                if direction.Magnitude > 0 then
+                    bodyVelocity.Velocity = direction.Unit * getgenv().PlayerSettings.FlySpeed
+                else
+                    bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                end
+            end)
+            table.insert(getgenv().Connections, flyConnection)
+        else
+            if bodyVelocity then
+                pcall(function() bodyVelocity:Destroy() end)
+                bodyVelocity = nil
+            end
+            if bodyGyro then
+                pcall(function() bodyGyro:Destroy() end)
+                bodyGyro = nil
+            end
+            if flyConnection then
+                pcall(function() flyConnection:Disconnect() end)
+                flyConnection = nil
             end
         end
     end
+
+    PlayerTab:CreateToggle({
+        Name = "Enable Fly",
+        CurrentValue = getgenv().PlayerSettings.FlyEnabled,
+        Callback = function(v)
+            getgenv().PlayerSettings.FlyEnabled = v
+            toggleFly(v)
+        end
+    })
+    local FlySpeedSlider = PlayerTab:CreateSlider({
+        Name = "Fly Speed",
+        Range = {50, 1000},
+        Increment = 5,
+        CurrentValue = getgenv().PlayerSettings.FlySpeed,
+        Callback = function(v) getgenv().PlayerSettings.FlySpeed = v end
+    })
+    PlayerTab:CreateButton({
+        Name = "Reset Fly Speed",
+        Callback = function()
+            getgenv().PlayerSettings.FlyEnabled = false
+            getgenv().PlayerSettings.FlySpeed = 50
+            pcall(function() FlySpeedSlider:Set(50) end)
+            toggleFly(false)
+        end
+    })
+
+    -- ======= Misc UI =======
+    MiscTab:CreateSection("Miscellaneous")
+    MiscTab:CreateToggle({
+        Name = "Anti-AFK/Kick",
+        CurrentValue = getgenv().MiscSettings.AntiAFK,
+        Callback = function(v)
+            getgenv().MiscSettings.AntiAFK = v
+            if v then
+                local conn = LocalPlayer.Idled:Connect(function()
+                    VirtualUser:CaptureController()
+                    VirtualUser:ClickButton2(Vector2.new())
+                    pcall(function()
+                        Rayfield:Notify({
+                            Title = "Valox Hub",
+                            Content = "Anti-AFK/Kick activated!",
+                            Duration = 3
+                        })
+                    end)
+                end)
+                table.insert(getgenv().Connections, conn)
+            end
+        end
+    })
+    MiscTab:CreateButton({
+        Name = "Unload Script",
+        Callback = function() UnloadAll() end
+    })
+    MiscTab:CreateSection("Player Utilities")
+    MiscTab:CreateButton({
+        Name = "Bring All",
+        Callback = function()
+            if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                pcall(function()
+                    Rayfield:Notify({
+                        Title = "Valox Hub",
+                        Content = "Your character is not loaded!",
+                        Duration = 3
+                    })
+                end)
+                return
+            end
+            local targetPosition = LocalPlayer.Character.HumanoidRootPart.Position
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                    pcall(function()
+                        player.Character.HumanoidRootPart.CFrame = CFrame.new(targetPosition + Vector3.new(math.random(-5, 5), 0, math.random(-5, 5)))
+                    end)
+                end
+            end
+            pcall(function()
+                Rayfield:Notify({
+                    Title = "Valox Hub",
+                    Content = "Brought all players to your location!",
+                    Duration = 3
+                })
+            end)
+        end
+    })
+    MiscTab:CreateSection("Hitbox Expander")
+    MiscTab:CreateToggle({
+        Name = "Enable Hitbox",
+        CurrentValue = getgenv().HomeSettings.HitboxEnabled,
+        Callback = function(v)
+            getgenv().HomeSettings.HitboxEnabled = v
+            if v then
+                for _, plr in pairs(Players:GetPlayers()) do
+                    if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                        pcall(function()
+                            local root = plr.Character.HumanoidRootPart
+                            local hitboxSize = getgenv().HomeSettings.HitboxSize
+                            root.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
+                            root.Transparency = 0.7
+                            root.CanCollide = true
+                            root.Material = Enum.Material.Neon
+                            root.BrickColor = BrickColor.new("Really red")
+                            local adorn = Instance.new("BoxHandleAdornment")
+                            adorn.Size = root.Size
+                            adorn.Adornee = root
+                            adorn.Color3 = Color3.fromRGB(255, 0, 0)
+                            adorn.Transparency = 0.7
+                            adorn.AlwaysOnTop = true
+                            adorn.ZIndex = 5
+                            adorn.Parent = CoreGui
+                            getgenv().HitboxAdornments[plr] = adorn
+                            print("Hitbox enabled for", plr.Name, ": Size =", root.Size, "Transparency =", root.Transparency)
+                        end)
+                    end
+                end
+                pcall(function()
+                    Rayfield:Notify({
+                        Title = "Valox Hub",
+                        Content = "Hitbox Expander Enabled!",
+                        Duration = 4
+                    })
+                end)
+            else
+                for _, plr in pairs(Players:GetPlayers()) do
+                    if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                        pcall(function()
+                            local root = plr.Character.HumanoidRootPart
+                            root.Size = Vector3.new(2, 2, 1)
+                            root.Transparency = 1
+                            root.CanCollide = true
+                            root.Material = Enum.Material.Plastic
+                            root.BrickColor = BrickColor.new("Medium stone grey")
+                            if getgenv().HitboxAdornments[plr] then
+                                getgenv().HitboxAdornments[plr]:Destroy()
+                                getgenv().HitboxAdornments[plr] = nil
+                            end
+                            print("Hitbox disabled for", plr.Name, ": Size =", root.Size, "Transparency =", root.Transparency)
+                        end)
+                    end
+                end
+                pcall(function()
+                    Rayfield:Notify({
+                        Title = "Valox Hub",
+                        Content = "Hitbox Expander Disabled!",
+                        Duration = 4
+                    })
+                end)
+            end
+        end
+    })
+    MiscTab:CreateSlider({
+        Name = "Hitbox Size",
+        Range = {10, 200},
+        Increment = 5,
+        CurrentValue = getgenv().HomeSettings.HitboxSize,
+        Callback = function(v)
+            getgenv().HomeSettings.HitboxSize = v
+            if getgenv().HomeSettings.HitboxEnabled then
+                for _, plr in pairs(Players:GetPlayers()) do
+                    if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                        pcall(function()
+                            local root = plr.Character.HumanoidRootPart
+                            root.Size = Vector3.new(v, v, v)
+                            if getgenv().HitboxAdornments[plr] then
+                                getgenv().HitboxAdornments[plr].Size = root.Size
+                            end
+                            print("Hitbox size updated for", plr.Name, ": Size =", root.Size)
+                        end)
+                    end
+                end
+            end
+        end
+    })
+    MiscTab:CreateSection("Anti-Fling")
+    local AntiFlingToggle = MiscTab:CreateToggle({
+        Name = "Anti-Fling",
+        CurrentValue = getgenv().MiscSettings.AntiFling,
+        Callback = function(v)
+            getgenv().MiscSettings.AntiFling = v
+            if v then
+                local antiFlingConn = RunService.RenderStepped:Connect(function()
+                    if not getgenv().MiscSettings.AntiFling then return end
+                    pcall(function()
+                        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                        local hrp = char:FindFirstChild("HumanoidRootPart")
+                        local hum = char:FindFirstChildOfClass("Humanoid")
+                        if char and hrp and hum then
+                            if not getgenv().AntiFlingParts[LocalPlayer] then
+                                local XPart = Instance.new("Part", workspace)
+                                XPart.Position = hrp.Position + Vector3.new(0, 2, 0)
+                                XPart.Anchored = true
+                                XPart.CanCollide = false
+                                XPart.Transparency = 0.5
+                                local GUI = Instance.new("BillboardGui", XPart)
+                                GUI.Size = UDim2.new(4, 0, 2, 0)
+                                GUI.StudsOffsetWorldSpace = Vector3.new(0, 1.5, 0)
+                                local TextLabel = Instance.new("TextLabel", GUI)
+                                TextLabel.Text = "Anti Fling Part"
+                                TextLabel.Size = UDim2.new(1, 0, 1, 0)
+                                TextLabel.BackgroundTransparency = 1
+                                TextLabel.Font = Enum.Font.AmaticSC
+                                TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                                TextLabel.TextScaled = true
+                                getgenv().AntiFlingParts[LocalPlayer] = XPart
+                                print("Anti-Fling part created for", LocalPlayer.Name, ": Transparency =", XPart.Transparency)
+                            end
+                            local XPart = getgenv().AntiFlingParts[LocalPlayer]
+                            if hrp.Velocity.Magnitude > 100 then
+                                hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+                                hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+                                getgenv().AntiFlingUpdate = false
+                                for _, v in ipairs(char:GetDescendants()) do
+                                    if v:IsA("BasePart") then
+                                        v.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                                        v.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                                        v.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0)
+                                    end
+                                end
+                                for _, plr in pairs(Players:GetPlayers()) do
+                                    if plr ~= LocalPlayer then
+                                        local c = plr.Character
+                                        if c and c.Parent then
+                                            for _, v1 in pairs(c:GetDescendants()) do
+                                                if v1:IsA("BasePart") then
+                                                    v1.Velocity = Vector3.new(0, 0, 0)
+                                                    v1.RotVelocity = Vector3.new(0, 0, 0)
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                                hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                                hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                                hrp.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0)
+                                hrp.CFrame = XPart.CFrame
+                            else
+                                hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+                                hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+                                getgenv().AntiFlingUpdate = true
+                                hrp.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+                                for _, v in ipairs(char:GetDescendants()) do
+                                    if v:IsA("BasePart") then
+                                        v.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+                                    end
+                                end
+                            end
+                            if getgenv().AntiFlingUpdate then
+                                XPart.Position = hrp.Position + Vector3.new(0, 2, 0)
+                                XPart.CFrame = CFrame.lookAt(XPart.Position, XPart.Position + hrp.CFrame.LookVector)
+                            end
+                        end
+                    end)
+                end)
+                table.insert(getgenv().Connections, antiFlingConn)
+                pcall(function()
+                    Rayfield:Notify({
+                        Title = "Valox Hub",
+                        Content = "Valox Anti-Fling Enabled!",
+                        Duration = 4
+                    })
+                end)
+            else
+                if getgenv().AntiFlingParts[LocalPlayer] then
+                    pcall(function()
+                        getgenv().AntiFlingParts[LocalPlayer].Transparency = 1
+                        getgenv().AntiFlingParts[LocalPlayer]:Destroy()
+                        getgenv().AntiFlingParts[LocalPlayer] = nil
+                        print("Anti-Fling part disabled for", LocalPlayer.Name, ": Transparency = 1")
+                    end)
+                end
+                pcall(function()
+                    Rayfield:Notify({
+                        Title = "Valox Hub",
+                        Content = "Valox Anti-Fling Disabled!",
+                        Duration = 4
+                    })
+                end)
+            end
+        end
+    })
+
+    local nif = Instance.new("Sound")
+    nif.Parent = game:GetService("SoundService")
+    nif.SoundId = "rbxassetid://9086208751"
+    nif.Volume = 1
+    local chatConn = LocalPlayer.Chatted:Connect(function(m)
+        if m:sub(1, 7) == "/antioff" then
+            getgenv().MiscSettings.AntiFling = false
+            AntiFlingToggle:Set(false)
+            if getgenv().AntiFlingParts[LocalPlayer] then
+                pcall(function()
+                    getgenv().AntiFlingParts[LocalPlayer].Transparency = 1
+                    getgenv().AntiFlingParts[LocalPlayer]:Destroy()
+                    getgenv().AntiFlingParts[LocalPlayer] = nil
+                    print("Anti-Fling part disabled via /antioff for", LocalPlayer.Name, ": Transparency = 1")
+                end)
+            end
+            pcall(function()
+                Rayfield:Notify({
+                    Title = "Valox Hub",
+                    Content = "Valox Anti-Fling Disabled!",
+                    Duration = 4
+                })
+            end)
+            nif:Play()
+        elseif m:sub(1, 6) == "/antion" then
+            getgenv().MiscSettings.AntiFling = true
+            AntiFlingToggle:Set(true)
+            if not getgenv().AntiFlingParts[LocalPlayer] then
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local XPart = Instance.new("Part", workspace)
+                    XPart.Position = hrp.Position + Vector3.new(0, 2, 0)
+                    XPart.Anchored = true
+                    XPart.CanCollide = false
+                    XPart.Transparency = 0.5
+                    local GUI = Instance.new("BillboardGui", XPart)
+                    GUI.Size = UDim2.new(4, 0, 2, 0)
+                    GUI.StudsOffsetWorldSpace = Vector3.new(0, 1.5, 0)
+                    local TextLabel = Instance.new("TextLabel", GUI)
+                    TextLabel.Text = "Anti Fling Part"
+                    TextLabel.Size = UDim2.new(1, 0, 1, 0)
+                    TextLabel.BackgroundTransparency = 1
+                    TextLabel.Font = Enum.Font.AmaticSC
+                    TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    TextLabel.TextScaled = true
+                    getgenv().AntiFlingParts[LocalPlayer] = XPart
+                    print("Anti-Fling part created via /antion for", LocalPlayer.Name, ": Transparency =", XPart.Transparency)
+                end
+            end
+            pcall(function()
+                Rayfield:Notify({
+                    Title = "Valox Hub",
+                    Content = "Valox Anti-Fling Enabled!",
+                    Duration = 4
+                })
+            end)
+            nif:Play()
+        end
+    end)
+    table.insert(getgenv().Connections, chatConn)
+end)
+if not success then
+    warn("Tab creation failed:", err)
+    return
 end
 
-local espConn = RunService.RenderStepped:Connect(updateESP)
-table.insert(getgenv().Connections, espConn)
-
-Players.PlayerRemoving:Connect(function(plr)
-    if getgenv().ESPBoxes[plr] then
-        pcall(function() getgenv().ESPBoxes[plr]:Destroy() end)
-        getgenv().ESPBoxes[plr] = nil
-    end
-end)
-
--- ======= Player enforcement (WS / JP) =======
-local enforceConn = RunService.RenderStepped:Connect(function()
-    local char = LocalPlayer.Character
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            if getgenv().PlayerSettings.WalkspeedEnabled then
-                pcall(function() hum.WalkSpeed = getgenv().PlayerSettings.Walkspeed end)
-            end
-            if getgenv().PlayerSettings.JumpPowerEnabled then
-                pcall(function() hum.JumpPower = getgenv().PlayerSettings.JumpPower end)
-            end
+-- ======= Player loop for Walkspeed, Jump Power, and Infinite Jump =======
+local playerConn = RunService.RenderStepped:Connect(function()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if getgenv().PlayerSettings.WalkspeedEnabled then
+            pcall(function() hum.WalkSpeed = getgenv().PlayerSettings.Walkspeed end)
+        end
+        if getgenv().PlayerSettings.JumpPowerEnabled then
+            pcall(function() hum.JumpPower = getgenv().PlayerSettings.JumpPower end)
         end
     end
 end)
-table.insert(getgenv().Connections, enforceConn)
+table.insert(getgenv().Connections, playerConn)
 
--- infinite jump
-local infJumpConn = UserInputService.JumpRequest:Connect(function()
-    if getgenv().PlayerSettings.InfiniteJump and LocalPlayer.Character then
-        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if hum then pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end) end
+local infJumpConn
+infJumpConn = UserInputService.JumpRequest:Connect(function()
+    if getgenv().PlayerSettings.InfiniteJump and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
     end
 end)
 table.insert(getgenv().Connections, infJumpConn)
 
+-- ======= Character reset handling for Fly and Anti-Fling =======
 LocalPlayer.CharacterAdded:Connect(function(char)
-    wait(0.1)
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        if getgenv().PlayerSettings.JumpPowerEnabled then
-            pcall(function() hum.JumpPower = getgenv().PlayerSettings.JumpPower end)
-        end
+    local hrp = char:WaitForChild("HumanoidRootPart", 5)
+    local hum = char:WaitForChild("Humanoid", 5)
+    if hrp and hum then
+        -- Reapply Walkspeed and Jump Power
         if getgenv().PlayerSettings.WalkspeedEnabled then
             pcall(function() hum.WalkSpeed = getgenv().PlayerSettings.Walkspeed end)
         end
-    end
-end)
-
--- ======= Aimbot core =======
-local aimActive = false
-UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end
-    if getgenv().AimbotSettings.Mode == "Hold" and input.UserInputType == Enum.UserInputType.MouseButton2 then
-        aimActive = true
-    elseif getgenv().AimbotSettings.Mode == "Toggle" and input.UserInputType == Enum.UserInputType.MouseButton2 then
-        aimActive = not aimActive
-    end
-end)
-UserInputService.InputEnded:Connect(function(input)
-    if getgenv().AimbotSettings.Mode == "Hold" and input.UserInputType == Enum.UserInputType.MouseButton2 then
-        aimActive = false
-    end
-end)
-
-local function smoothingFactorFromSetting()
-    local s = getgenv().AimbotSettings.Smoothing
-    return (s == "Off" and 1) or (s == "Low" and 0.15) or (s == "Medium" and 0.08) or (s == "High" and 0.03) or 0.1
-end
-
-local function getClosest()
-    local closest, shortestDist = nil, math.huge
-    local mousePos = UserInputService:GetMouseLocation()
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr == LocalPlayer then continue end
-        local char = plr.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if hum and root and hum.Health > 0 then
-            if getgenv().AimbotSettings.TeamCheck and plr.Team == LocalPlayer.Team then continue end
-            local screenPos, onScreen = Camera:WorldToViewportPoint(root.Position)
-            if not onScreen then continue end
-            local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(mousePos.X, mousePos.Y)).Magnitude
-            if dist < shortestDist and dist <= getgenv().CircleSettings.FOV then
-                closest = plr
-                shortestDist = dist
+        if getgenv().PlayerSettings.JumpPowerEnabled then
+            pcall(function() hum.JumpPower = getgenv().PlayerSettings.JumpPower end)
+        end
+        -- Reapply Fly
+        if getgenv().PlayerSettings.FlyEnabled then
+            toggleFly(false) -- Clean up old fly instances
+            toggleFly(true)  -- Reapply fly
+        end
+        -- Reapply Anti-Fling
+        if getgenv().MiscSettings.AntiFling then
+            if getgenv().AntiFlingParts[LocalPlayer] then
+                pcall(function()
+                    getgenv().AntiFlingParts[LocalPlayer]:Destroy()
+                    getgenv().AntiFlingParts[LocalPlayer] = nil
+                end)
             end
+            pcall(function()
+                local XPart = Instance.new("Part", workspace)
+                XPart.Position = hrp.Position + Vector3.new(0, 2, 0)
+                XPart.Anchored = true
+                XPart.CanCollide = false
+                XPart.Transparency = 0.5
+                local GUI = Instance.new("BillboardGui", XPart)
+                GUI.Size = UDim2.new(4, 0, 2, 0)
+                GUI.StudsOffsetWorldSpace = Vector3.new(0, 1.5, 0)
+                local TextLabel = Instance.new("TextLabel", GUI)
+                TextLabel.Text = "Anti Fling Part"
+                TextLabel.Size = UDim2.new(1, 0, 1, 0)
+                TextLabel.BackgroundTransparency = 1
+                TextLabel.Font = Enum.Font.AmaticSC
+                TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                TextLabel.TextScaled = true
+                getgenv().AntiFlingParts[LocalPlayer] = XPart
+                print("Anti-Fling part recreated for", LocalPlayer.Name, "on respawn: Transparency =", XPart.Transparency)
+            end)
         end
     end
-    return closest
-end
-
-local aimConn = RunService.RenderStepped:Connect(function()
-    if not getgenv().AimbotSettings.Enabled then return end
-    if getgenv().AimbotSettings.Mode == "Hold" and not aimActive then return end
-    if getgenv().AimbotSettings.Mode == "Toggle" and not aimActive then return end
-
-    local target = getClosest()
-    if not target or not target.Character then return end
-    local hum = target.Character:FindFirstChildOfClass("Humanoid")
-    if not hum or hum.Health <= 0 then return end
-
-    local finalPart = getAimPartFromName(target.Character, getgenv().AimbotSettings.TargetPart)
-    if not finalPart then return end
-
-    if getgenv().AimbotSettings.SmartAimbot then
-        local origin = Camera.CFrame.Position
-        local direction = (finalPart.Position - origin)
-        local rayParams = RaycastParams.new()
-        rayParams.FilterType = Enum.RaycastFilterType.Blacklist
-        rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
-        local result = workspace:Raycast(origin, direction, rayParams)
-        if result and result.Instance and result.Instance:IsA("BasePart") and not result.Instance:IsDescendantOf(target.Character) then
-            local headPart = target.Character:FindFirstChild("Head")
-            if headPart and finalPart ~= headPart then
-                finalPart = headPart
-            end
-        end
-    end
-
-    local targetPos = finalPart.Position
-    local hrp = target.Character:FindFirstChild("HumanoidRootPart")
-    if hrp and getgenv().AimbotSettings.Prediction ~= "Off" then
-        local mult = (getgenv().AimbotSettings.Prediction == "Low" and 0.06)
-                  or (getgenv().AimbotSettings.Prediction == "Medium" and 0.11)
-                  or (getgenv().AimbotSettings.Prediction == "High" and 0.2)
-                  or 0
-        targetPos = targetPos + hrp.Velocity * mult
-    end
-
-    local camCF = Camera.CFrame
-    local wanted = CFrame.new(camCF.Position, targetPos)
-
-    Camera.CFrame = camCF:Lerp(wanted, smoothingFactorFromSetting())
 end)
-table.insert(getgenv().Connections, aimConn)
 
--- ======= Finish =======
+-- ======= Final Notification =======
 getgenv().ScriptLoaded = true
-pcall(function() Rayfield:Notify({ Title = "Valox Hub", Content = "Loaded, Enjoy!", Duration = 3 }) end)
+pcall(function()
+    Rayfield:Notify({
+        Title = "Valox Hub",
+        Content = "Valox Hub v1.7.4 has been loaded successfully!",
+        Duration = 5
+    })
+end)
+print("Valox Hub v1.7.4 fully loaded")
