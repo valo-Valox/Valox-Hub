@@ -1,7 +1,6 @@
--- V 1.7.4
--- ALL credits to Valox
+-- Valox Hub v1.7.4
+-- ALL credits to Valox Creations (Me)
 -- ======= Cleanup previous runs =======
-print("Starting cleanup...")
 if getgenv().Rayfield and type(getgenv().Rayfield.Destroy) == "function" then
     pcall(function() getgenv().Rayfield:Destroy() end)
 end
@@ -52,7 +51,6 @@ if getgenv().HitboxAdornments then
 end
 getgenv().HitboxAdornments = {}
 
--- Reset Hitbox sizes on startup
 for _, plr in pairs(game:GetService("Players"):GetPlayers()) do
     if plr ~= game:GetService("Players").LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
         pcall(function()
@@ -62,7 +60,6 @@ for _, plr in pairs(game:GetService("Players"):GetPlayers()) do
             root.CanCollide = true
             root.Material = Enum.Material.Plastic
             root.BrickColor = BrickColor.new("Medium stone grey")
-            print("Reset HumanoidRootPart for", plr.Name, ": Transparency =", root.Transparency)
         end)
     end
 end
@@ -107,7 +104,8 @@ getgenv().PlayerSettings = getgenv().PlayerSettings or {
 
 getgenv().MiscSettings = getgenv().MiscSettings or {
     AntiAFK = false,
-    AntiFling = false
+    AntiFling = false,
+    PlasticMaterialsEnabled = false
 }
 
 getgenv().HomeSettings = getgenv().HomeSettings or {
@@ -124,7 +122,7 @@ local Camera = workspace.CurrentCamera
 local VirtualUser = game:GetService("VirtualUser")
 local CoreGui = game:GetService("CoreGui")
 
--- runtime tables
+-- Runtime tables
 getgenv().ActiveCircles = getgenv().ActiveCircles or {}
 getgenv().ESPBoxes = getgenv().ESPBoxes or {}
 getgenv().SkeletonLines = getgenv().SkeletonLines or {}
@@ -165,7 +163,6 @@ local function ClearHitboxAdornments()
 end
 
 local function UnloadAll()
-    print("Unloading all...")
     DestroyAllCircles()
     ClearESPBoxes()
     ClearSkeletonLines()
@@ -187,16 +184,22 @@ local function UnloadAll()
                 root.CanCollide = true
                 root.Material = Enum.Material.Plastic
                 root.BrickColor = BrickColor.new("Medium stone grey")
-                print("Unloaded HumanoidRootPart for", plr.Name, ": Transparency =", root.Transparency)
             end)
         end
     end
+    for obj, props in pairs(objectCache) do
+        pcall(function()
+            if obj and obj.Parent and props.Material then
+                obj.Material = props.Material
+            end
+        end)
+    end
+    objectCache = {}
     if getgenv().Rayfield and type(getgenv().Rayfield.Destroy) == "function" then
         pcall(function() getgenv().Rayfield:Destroy() end)
     end
     getgenv().Rayfield = nil
     getgenv().ScriptLoaded = false
-    print("Unload complete")
 end
 
 local function getAimPartFromName(character, name)
@@ -212,21 +215,25 @@ local function getAimPartFromName(character, name)
 end
 
 -- ======= Load Rayfield =======
-print("Attempting to load Rayfield...")
 local ok, Rayfield = pcall(function()
     return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 end)
 if not ok or not Rayfield then
-    warn("Rayfield failed to load!", Rayfield)
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Valox Hub Error",
+            Text = "Failed to load Rayfield UI. Check your executor or network.",
+            Duration = 5
+        })
+    end)
     return
 end
 getgenv().Rayfield = Rayfield
-print("Rayfield loaded successfully", Rayfield)
 
 -- ======= Mobile check =======
 local isMobile = UserInputService.TouchEnabled or (UserInputService.KeyboardEnabled == false)
 
--- ======= UI =======
+-- ======= UI Creation =======
 local Window
 local success, err = pcall(function()
     Window = Rayfield:CreateWindow({
@@ -238,12 +245,17 @@ local success, err = pcall(function()
     })
 end)
 if not success then
-    warn("Window creation failed:", err)
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Valox Hub Error",
+            Text = "Failed to create UI window: " .. tostring(err),
+            Duration = 5
+        })
+    end)
     return
 end
-print("Window created:", Window)
 
--- create tabs conditionally, Home first
+-- ======= Tab Creation =======
 local success, err = pcall(function()
     local HomeTab = Window:CreateTab("Home", "home")
     local AimbotTab, CircleTab
@@ -253,14 +265,68 @@ local success, err = pcall(function()
     end
     local ESPTab = Window:CreateTab("ESP", "eye")
     local PlayerTab = Window:CreateTab("Player", "user")
-    local MiscTab = Window:CreateTab("Misc", "settings")
 
-    -- ======= Home tab =======
+    -- ======= Home Tab: Hub Launcher & Changelog =======
+    HomeTab:CreateSection("Hub Launcher")
+    local hubs = {
+        ["H4x Scripts"] = "https://raw.githubusercontent.com/H4xScripts/Loader/refs/heads/main/loader.lua",
+        ["VoidWare"] = "https://raw.githubusercontent.com/VapeVoidware/VWExtra/main/NightsInTheForest.lua",
+        ["Infinite Yield"] = "https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source",
+        ["Vertex"] = "https://raw.githubusercontent.com/vertex-peak/vertex/refs/heads/main/loadstring"
+    }
+    for name, url in pairs(hubs) do
+        HomeTab:CreateButton({
+            Name = "Load " .. name,
+            Callback = function()
+                if not url or url == "" then
+                    pcall(function()
+                        Rayfield:Notify({
+                            Title = "Valox Hub",
+                            Content = "No URL set for " .. name,
+                            Duration = 3
+                        })
+                    end)
+                    return
+                end
+                pcall(function()
+                    Rayfield:Notify({
+                        Title = "Valox Hub",
+                        Content = "Loading " .. name,
+                        Duration = 2
+                    })
+                end)
+                local ok, err = pcall(function()
+                    local scriptText = game:HttpGet(url, true)
+                    local fn = loadstring(scriptText)
+                    if type(fn) == "function" then fn() end
+                end)
+                if not ok then
+                    pcall(function()
+                        Rayfield:Notify({
+                            Title = "Valox Hub",
+                            Content = "Failed to load " .. name,
+                            Duration = 3
+                        })
+                    end)
+                else
+                    pcall(function()
+                        Rayfield:Notify({
+                            Title = "Valox Hub",
+                            Content = name .. " loaded",
+                            Duration = 2
+                        })
+                    end)
+                end
+            end
+        })
+    end
+
     HomeTab:CreateSection("Changelog & Updates")
     HomeTab:CreateParagraph({
         Title = "Changelog",
         Content = [[
 ### Version 1.7.4
+- Added Hub Launcher buttons in Home tab
 - Fixed Hitbox Expander to show visible boxes with proper size and transparency
 
 ### Version 1.7.3
@@ -299,7 +365,7 @@ local success, err = pcall(function()
         ]]
     })
 
-    -- ======= Aimbot UI & core (mobile safe) =======
+    -- ======= Aimbot Tab (Non-Mobile) =======
     local aimConn = nil
     if not isMobile then
         AimbotTab:CreateSection("Aimbot")
@@ -425,7 +491,7 @@ local success, err = pcall(function()
         table.insert(getgenv().Connections, aimConn)
     end
 
-    -- ======= Circle UI & drawing (mobile safe) =======
+    -- ======= Circle Tab (Non-Mobile) =======
     local mainCircle = nil
     local circleConn = nil
     if not isMobile then
@@ -498,7 +564,7 @@ local success, err = pcall(function()
         table.insert(getgenv().Connections, circleConn)
     end
 
-    -- ======= ESP UI & Box ESP =======
+    -- ======= ESP Tab =======
     ESPTab:CreateSection("ESP")
     ESPTab:CreateToggle({
         Name = "Enable ESP",
@@ -571,16 +637,12 @@ local success, err = pcall(function()
                             b.ZIndex = 10
                             b.Parent = CoreGui
                             getgenv().ESPBoxes[plr] = b
-                            print("Box ESP created for", plr.Name)
                         end)
-                        if not success then
-                            warn("Box ESP creation failed for", plr.Name, ":", err)
-                        end
+                        if not success then end
                     else
                         pcall(function()
                             getgenv().ESPBoxes[plr].Color3 = getgenv().ESPSettings.Color
                             getgenv().ESPBoxes[plr].Adornee = root
-                            print("Box ESP updated for", plr.Name)
                         end)
                     end
                 else
@@ -588,7 +650,6 @@ local success, err = pcall(function()
                         pcall(function()
                             getgenv().ESPBoxes[plr]:Destroy()
                             getgenv().ESPBoxes[plr] = nil
-                            print("Box ESP removed for", plr.Name, ": Out of range")
                         end)
                     end
                 end
@@ -597,7 +658,6 @@ local success, err = pcall(function()
                     pcall(function()
                         getgenv().ESPBoxes[plr]:Destroy()
                         getgenv().ESPBoxes[plr] = nil
-                        print("Box ESP removed for", plr.Name, ": Invalid character")
                     end)
                 end
             end
@@ -607,7 +667,7 @@ local success, err = pcall(function()
     local boxESPConn = RunService.RenderStepped:Connect(updateBoxESP)
     table.insert(getgenv().Connections, boxESPConn)
 
-    -- Skeleton ESP core (updated with transparency toggle)
+    -- Skeleton ESP core
     local function DrawLine()
         local l
         local success, err = pcall(function()
@@ -618,9 +678,7 @@ local success, err = pcall(function()
             l.Color = getgenv().ESPSettings.Color
             l.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
         end)
-        if not success then
-            warn("DrawLine failed:", err)
-        end
+        if not success then end
         return l
     end
 
@@ -665,16 +723,7 @@ local success, err = pcall(function()
             }
         end
         
-        for lineName, line in pairs(limbs) do
-            if line then
-                print("Skeleton line", lineName, "created for", plr.Name)
-            else
-                print("Skeleton line", lineName, "skipped for", plr.Name, ": Missing parts")
-            end
-        end
-        
         getgenv().SkeletonLines[plr] = { Limbs = limbs, Connection = nil }
-        print("Skeleton lines initialized for", plr.Name)
         
         local conn
         conn = RunService.RenderStepped:Connect(function()
@@ -688,7 +737,6 @@ local success, err = pcall(function()
                                 line.Transparency = 0
                             end
                         end
-                        print("Skeleton lines updated for", plr.Name, ": Out of range")
                         return
                     end
                     
@@ -922,18 +970,15 @@ local success, err = pcall(function()
                                 limbs.RightLeg.Transparency = getgenv().ESPSettings.SkeletonEnabled and 1 or 0
                             end
                         end
-                        print("Skeleton lines updated for", plr.Name, ": Visible")
                     else
                         for _, line in pairs(limbs) do
                             if line then
                                 line.Transparency = 0
                             end
                         end
-                        print("Skeleton lines updated for", plr.Name, ": Not visible")
                     end
                 end)
                 if not success then
-                    warn("Skeleton ESP update failed for", plr.Name, ":", err)
                     for _, line in pairs(limbs) do
                         if line then line:Remove() end
                     end
@@ -952,7 +997,6 @@ local success, err = pcall(function()
                     end
                     getgenv().SkeletonLines[plr] = nil
                     conn:Disconnect()
-                    print("Skeleton lines removed for", plr.Name, ": Player left")
                 end
             end
         end)
@@ -964,48 +1008,8 @@ local success, err = pcall(function()
             DrawSkeletonESP(plr)
         end
     end
-    Players.PlayerAdded:Connect(function(plr)
-        if plr ~= LocalPlayer then
-            DrawSkeletonESP(plr)
-        end
-    end)
-    Players.PlayerRemoving:Connect(function(plr)
-        if getgenv().ESPBoxes[plr] then
-            pcall(function()
-                getgenv().ESPBoxes[plr]:Destroy()
-                getgenv().ESPBoxes[plr] = nil
-                print("Box ESP removed for", plr.Name, ": Player left")
-            end)
-        end
-        if getgenv().SkeletonLines[plr] then
-            pcall(function()
-                if getgenv().SkeletonLines[plr].Connection then
-                    getgenv().SkeletonLines[plr].Connection:Disconnect()
-                end
-                for _, line in pairs(getgenv().SkeletonLines[plr].Limbs) do
-                    if line then line:Remove() end
-                end
-                getgenv().SkeletonLines[plr] = nil
-                print("Skeleton lines removed for", plr.Name, ": Player left")
-            end)
-        end
-        if getgenv().AntiFlingParts[plr] then
-            pcall(function()
-                getgenv().AntiFlingParts[plr]:Destroy()
-                getgenv().AntiFlingParts[plr] = nil
-                print("Anti-Fling part removed for", plr.Name)
-            end)
-        end
-        if getgenv().HitboxAdornments[plr] then
-            pcall(function()
-                getgenv().HitboxAdornments[plr]:Destroy()
-                getgenv().HitboxAdornments[plr] = nil
-                print("Hitbox adornment removed for", plr.Name)
-            end)
-        end
-    end)
 
-    -- ======= Player UI =======
+    -- ======= Player Tab =======
     PlayerTab:CreateSection("Player")
     local WS_Toggle = PlayerTab:CreateToggle({
         Name = "Enable Walkspeed",
@@ -1183,7 +1187,7 @@ local success, err = pcall(function()
         end
     })
 
-    -- ======= Misc UI =======
+    -- ======= Misc Tab =======
     MiscTab:CreateSection("Miscellaneous")
     MiscTab:CreateToggle({
         Name = "Anti-AFK/Kick",
@@ -1267,7 +1271,6 @@ local success, err = pcall(function()
                             adorn.ZIndex = 5
                             adorn.Parent = CoreGui
                             getgenv().HitboxAdornments[plr] = adorn
-                            print("Hitbox enabled for", plr.Name, ": Size =", root.Size, "Transparency =", root.Transparency)
                         end)
                     end
                 end
@@ -1292,7 +1295,6 @@ local success, err = pcall(function()
                                 getgenv().HitboxAdornments[plr]:Destroy()
                                 getgenv().HitboxAdornments[plr] = nil
                             end
-                            print("Hitbox disabled for", plr.Name, ": Size =", root.Size, "Transparency =", root.Transparency)
                         end)
                     end
                 end
@@ -1322,7 +1324,6 @@ local success, err = pcall(function()
                             if getgenv().HitboxAdornments[plr] then
                                 getgenv().HitboxAdornments[plr].Size = root.Size
                             end
-                            print("Hitbox size updated for", plr.Name, ": Size =", root.Size)
                         end)
                     end
                 end
@@ -1360,7 +1361,6 @@ local success, err = pcall(function()
                                 TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
                                 TextLabel.TextScaled = true
                                 getgenv().AntiFlingParts[LocalPlayer] = XPart
-                                print("Anti-Fling part created for", LocalPlayer.Name, ": Transparency =", XPart.Transparency)
                             end
                             local XPart = getgenv().AntiFlingParts[LocalPlayer]
                             if hrp.Velocity.Magnitude > 100 then
@@ -1420,10 +1420,8 @@ local success, err = pcall(function()
             else
                 if getgenv().AntiFlingParts[LocalPlayer] then
                     pcall(function()
-                        getgenv().AntiFlingParts[LocalPlayer].Transparency = 1
                         getgenv().AntiFlingParts[LocalPlayer]:Destroy()
                         getgenv().AntiFlingParts[LocalPlayer] = nil
-                        print("Anti-Fling part disabled for", LocalPlayer.Name, ": Transparency = 1")
                     end)
                 end
                 pcall(function()
@@ -1437,121 +1435,83 @@ local success, err = pcall(function()
         end
     })
 
-    local nif = Instance.new("Sound")
-    nif.Parent = game:GetService("SoundService")
-    nif.SoundId = "rbxassetid://9086208751"
-    nif.Volume = 1
-    local chatConn = LocalPlayer.Chatted:Connect(function(m)
-        if m:sub(1, 7) == "/antioff" then
-            getgenv().MiscSettings.AntiFling = false
-            AntiFlingToggle:Set(false)
-            if getgenv().AntiFlingParts[LocalPlayer] then
-                pcall(function()
-                    getgenv().AntiFlingParts[LocalPlayer].Transparency = 1
-                    getgenv().AntiFlingParts[LocalPlayer]:Destroy()
-                    getgenv().AntiFlingParts[LocalPlayer] = nil
-                    print("Anti-Fling part disabled via /antioff for", LocalPlayer.Name, ": Transparency = 1")
-                end)
-            end
-            pcall(function()
+    MiscTab:CreateToggle({
+        Name = "Plastic Materials",
+        CurrentValue = getgenv().MiscSettings.PlasticMaterialsEnabled,
+        Callback = function(v)
+            local success, err = pcall(function()
+                getgenv().MiscSettings.PlasticMaterialsEnabled = v
+                updateWorldObjects() -- Apply or revert material changes
                 Rayfield:Notify({
                     Title = "Valox Hub",
-                    Content = "Valox Anti-Fling Disabled!",
+                    Content = "Plastic Materials " .. (v and "Enabled" or "Disabled") .. "!",
                     Duration = 4
                 })
             end)
-            nif:Play()
-        elseif m:sub(1, 6) == "/antion" then
-            getgenv().MiscSettings.AntiFling = true
-            AntiFlingToggle:Set(true)
-            if not getgenv().AntiFlingParts[LocalPlayer] then
-                local char = LocalPlayer.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local XPart = Instance.new("Part", workspace)
-                    XPart.Position = hrp.Position + Vector3.new(0, 2, 0)
-                    XPart.Anchored = true
-                    XPart.CanCollide = false
-                    XPart.Transparency = 0.5
-                    local GUI = Instance.new("BillboardGui", XPart)
-                    GUI.Size = UDim2.new(4, 0, 2, 0)
-                    GUI.StudsOffsetWorldSpace = Vector3.new(0, 1.5, 0)
-                    local TextLabel = Instance.new("TextLabel", GUI)
-                    TextLabel.Text = "Anti Fling Part"
-                    TextLabel.Size = UDim2.new(1, 0, 1, 0)
-                    TextLabel.BackgroundTransparency = 1
-                    TextLabel.Font = Enum.Font.AmaticSC
-                    TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-                    TextLabel.TextScaled = true
-                    getgenv().AntiFlingParts[LocalPlayer] = XPart
-                    print("Anti-Fling part created via /antion for", LocalPlayer.Name, ": Transparency =", XPart.Transparency)
-                end
-            end
-            pcall(function()
+            if not success then
+                warn("Plastic Materials Toggle Error: " .. tostring(err)) -- Log error for debugging
                 Rayfield:Notify({
-                    Title = "Valox Hub",
-                    Content = "Valox Anti-Fling Enabled!",
-                    Duration = 4
+                    Title = "Valox Hub Error",
+                    Content = "Failed to toggle Plastic Materials: " .. tostring(err),
+                    Duration = 5
                 })
-            end)
-            nif:Play()
+            end
+        end
+    })
+
+    -- ======= Player Events =======
+    Players.PlayerAdded:Connect(function(plr)
+        if plr ~= LocalPlayer then
+            DrawSkeletonESP(plr)
         end
     end)
-    table.insert(getgenv().Connections, chatConn)
-end)
-if not success then
-    warn("Tab creation failed:", err)
-    return
-end
 
--- ======= Player loop for Walkspeed, Jump Power, and Infinite Jump =======
-local playerConn = RunService.RenderStepped:Connect(function()
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if getgenv().PlayerSettings.WalkspeedEnabled then
-            pcall(function() hum.WalkSpeed = getgenv().PlayerSettings.Walkspeed end)
-        end
-        if getgenv().PlayerSettings.JumpPowerEnabled then
-            pcall(function() hum.JumpPower = getgenv().PlayerSettings.JumpPower end)
-        end
-    end
-end)
-table.insert(getgenv().Connections, playerConn)
-
-local infJumpConn
-infJumpConn = UserInputService.JumpRequest:Connect(function()
-    if getgenv().PlayerSettings.InfiniteJump and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-        LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
-    end
-end)
-table.insert(getgenv().Connections, infJumpConn)
-
--- ======= Character reset handling for Fly and Anti-Fling =======
-LocalPlayer.CharacterAdded:Connect(function(char)
-    local hrp = char:WaitForChild("HumanoidRootPart", 5)
-    local hum = char:WaitForChild("Humanoid", 5)
-    if hrp and hum then
-        -- Reapply Walkspeed and Jump Power
-        if getgenv().PlayerSettings.WalkspeedEnabled then
-            pcall(function() hum.WalkSpeed = getgenv().PlayerSettings.Walkspeed end)
-        end
-        if getgenv().PlayerSettings.JumpPowerEnabled then
-            pcall(function() hum.JumpPower = getgenv().PlayerSettings.JumpPower end)
-        end
-        -- Reapply Fly
-        if getgenv().PlayerSettings.FlyEnabled then
-            toggleFly(false) -- Clean up old fly instances
-            toggleFly(true)  -- Reapply fly
-        end
-        -- Reapply Anti-Fling
-        if getgenv().MiscSettings.AntiFling then
-            if getgenv().AntiFlingParts[LocalPlayer] then
-                pcall(function()
-                    getgenv().AntiFlingParts[LocalPlayer]:Destroy()
-                    getgenv().AntiFlingParts[LocalPlayer] = nil
-                end)
-            end
+    Players.PlayerRemoving:Connect(function(plr)
+        if getgenv().ESPBoxes[plr] then
             pcall(function()
+                getgenv().ESPBoxes[plr]:Destroy()
+                getgenv().ESPBoxes[plr] = nil
+            end)
+        end
+        if getgenv().SkeletonLines[plr] then
+            pcall(function()
+                if getgenv().SkeletonLines[plr].Connection then
+                    getgenv().SkeletonLines[plr].Connection:Disconnect()
+                end
+                for _, line in pairs(getgenv().SkeletonLines[plr].Limbs) do
+                    if line then line:Remove() end
+                end
+                getgenv().SkeletonLines[plr] = nil
+            end)
+        end
+        if getgenv().AntiFlingParts[plr] then
+            pcall(function()
+                getgenv().AntiFlingParts[plr]:Destroy()
+                getgenv().AntiFlingParts[plr] = nil
+            end)
+        end
+        if getgenv().HitboxAdornments[plr] then
+            pcall(function()
+                getgenv().HitboxAdornments[plr]:Destroy()
+                getgenv().HitboxAdornments[plr] = nil
+            end)
+        end
+    end)
+
+    LocalPlayer.CharacterAdded:Connect(function(char)
+        pcall(function()
+            local hum = char:WaitForChild("Humanoid")
+            local hrp = char:WaitForChild("HumanoidRootPart")
+            if getgenv().PlayerSettings.WalkspeedEnabled then
+                hum.WalkSpeed = getgenv().PlayerSettings.Walkspeed
+            end
+            if getgenv().PlayerSettings.JumpPowerEnabled then
+                hum.JumpPower = getgenv().PlayerSettings.JumpPower
+            end
+            if getgenv().PlayerSettings.FlyEnabled then
+                toggleFly(true)
+            end
+            if getgenv().MiscSettings.AntiFling then
                 local XPart = Instance.new("Part", workspace)
                 XPart.Position = hrp.Position + Vector3.new(0, 2, 0)
                 XPart.Anchored = true
@@ -1568,19 +1528,453 @@ LocalPlayer.CharacterAdded:Connect(function(char)
                 TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
                 TextLabel.TextScaled = true
                 getgenv().AntiFlingParts[LocalPlayer] = XPart
-                print("Anti-Fling part recreated for", LocalPlayer.Name, "on respawn: Transparency =", XPart.Transparency)
-            end)
+            end
+        end)
+    end)
+
+    -- ======= Walkspeed and Jump Power Update =======
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if getgenv().PlayerSettings.WalkspeedEnabled then
+                hum.WalkSpeed = getgenv().PlayerSettings.Walkspeed
+            end
+            if getgenv().PlayerSettings.JumpPowerEnabled then
+                hum.JumpPower = getgenv().PlayerSettings.JumpPower
+            end
         end
     end
 end)
 
--- ======= Final Notification =======
+local updateConn = RunService.Heartbeat:Connect(function()
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if getgenv().PlayerSettings.WalkspeedEnabled then
+                pcall(function() hum.WalkSpeed = getgenv().PlayerSettings.Walkspeed end)
+            end
+            if getgenv().PlayerSettings.JumpPowerEnabled then
+                pcall(function() hum.JumpPower = getgenv().PlayerSettings.JumpPower end)
+            end
+        end
+    end
+end)
+table.insert(getgenv().Connections, updateConn)
+
+-- ======= Plastic Materials =======
+local objectCache = {} -- Store original properties
+local function updateWorldObjects()
+    local success, err = pcall(function()
+        if getgenv().MiscSettings.PlasticMaterialsEnabled then
+            local allObjects = game:GetService("Workspace"):GetDescendants()
+            for _, object in ipairs(allObjects) do
+                if object:IsA("BasePart") then
+                    local success, objErr = pcall(function()
+                        if not objectCache[object] then
+                            objectCache[object] = { Material = object.Material }
+                        end
+                        object.Material = Enum.Material.Plastic
+                    end)
+                    if not success then
+                        warn("Error updating object material: " .. tostring(objErr))
+                    end
+                end
+            end
+        else
+            for obj, props in pairs(objectCache) do
+                local success, objErr = pcall(function()
+                    if obj and obj.Parent and props.Material then
+                        obj.Material = props.Material
+                    end
+                end)
+                if not success then
+                    warn("Error reverting object material: " .. tostring(objErr))
+                end
+            end
+            -- Do not clear objectCache to preserve it for re-enabling
+        end
+    end)
+    if not success then
+        warn("updateWorldObjects Error: " .. tostring(err))
+        Rayfield:Notify({
+            Title = "Valox Hub Error",
+            Content = "Failed to update materials: " .. tostring(err),
+            Duration = 5
+        })
+    end
+end
+
+-- ======= Plastic Materials =======
+local objectCache = {} -- Store original properties
+local function updateWorldObjects()
+    if not getgenv().MiscSettings then
+        warn("MiscSettings is nil in updateWorldObjects")
+        return
+    end
+    local success, err = pcall(function()
+        if getgenv().MiscSettings.PlasticMaterialsEnabled then
+            local allObjects = game:GetService("Workspace"):GetDescendants()
+            for _, object in ipairs(allObjects) do
+                if object:IsA("BasePart") then
+                    local success, objErr = pcall(function()
+                        if not objectCache[object] then
+                            objectCache[object] = { Material = object.Material }
+                        end
+                        object.Material = Enum.Material.Plastic
+                    end)
+                    if not success then
+                        warn("Error updating object material: " .. tostring(objErr))
+                    end
+                end
+            end
+        else
+            for obj, props in pairs(objectCache) do
+                local success, objErr = pcall(function()
+                    if obj and obj.Parent and props.Material then
+                        obj.Material = props.Material
+                    end
+                end)
+                if not success then
+                    warn("Error reverting object material: " .. tostring(objErr))
+                end
+            end
+            -- Do not clear objectCache to preserve it for re-enabling
+        end
+    end)
+    if not success then
+        warn("updateWorldObjects Error: " .. tostring(err))
+        if Rayfield then
+            pcall(function()
+                Rayfield:Notify({
+                    Title = "Valox Hub Error",
+                    Content = "Failed to update materials: " .. tostring(err),
+                    Duration = 5
+                })
+            end)
+        end
+    end
+end
+
+-- Start the plastic materials update loop
+local plasticUpdateConn
+local function startPlasticUpdateLoop()
+    if plasticUpdateConn then
+        pcall(function() plasticUpdateConn:Disconnect() end)
+    end
+    plasticUpdateConn = game:GetService("RunService").Heartbeat:Connect(function()
+        if not getgenv().MiscSettings or not getgenv().MiscSettings.PlasticMaterialsEnabled then
+            pcall(function() plasticUpdateConn:Disconnect() end)
+            updateWorldObjects() -- Revert materials when toggling off
+            return
+        end
+        updateWorldObjects()
+    end)
+    table.insert(getgenv().Connections, plasticUpdateConn)
+end
+startPlasticUpdateLoop()
+
+-- Ensure updateWorldObjects is defined before toggle
+if not updateWorldObjects then
+    warn("updateWorldObjects is nil before MiscTab creation")
+end
+
+-- Move Plastic Materials toggle here to ensure updateWorldObjects is defined
+local MiscTab = Window:CreateTab("Misc", "settings") -- Recreate MiscTab if not already defined
+MiscTab:CreateSection("Miscellaneous")
+MiscTab:CreateToggle({
+    Name = "Anti-AFK/Kick",
+    CurrentValue = getgenv().MiscSettings.AntiAFK,
+    Callback = function(v)
+        getgenv().MiscSettings.AntiAFK = v
+        if v then
+            local conn = game:GetService("Players").LocalPlayer.Idled:Connect(function()
+                game:GetService("VirtualUser"):CaptureController()
+                game:GetService("VirtualUser"):ClickButton2(Vector2.new())
+                pcall(function()
+                    Rayfield:Notify({
+                        Title = "Valox Hub",
+                        Content = "Anti-AFK/Kick activated!",
+                        Duration = 3
+                    })
+                end)
+            end)
+            table.insert(getgenv().Connections, conn)
+        end
+    end
+})
+MiscTab:CreateButton({
+    Name = "Unload Script",
+    Callback = function() UnloadAll() end
+})
+MiscTab:CreateSection("Player Utilities")
+MiscTab:CreateButton({
+    Name = "Bring All",
+    Callback = function()
+        if not game:GetService("Players").LocalPlayer.Character or not game:GetService("Players").LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            pcall(function()
+                Rayfield:Notify({
+                    Title = "Valox Hub",
+                    Content = "Your character is not loaded!",
+                    Duration = 3
+                })
+            end)
+            return
+        end
+        local targetPosition = game:GetService("Players").LocalPlayer.Character.HumanoidRootPart.Position
+        for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
+            if player ~= game:GetService("Players").LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                pcall(function()
+                    player.Character.HumanoidRootPart.CFrame = CFrame.new(targetPosition + Vector3.new(math.random(-5, 5), 0, math.random(-5, 5)))
+                end)
+            end
+        end
+        pcall(function()
+            Rayfield:Notify({
+                Title = "Valox Hub",
+                Content = "Brought all players to your location!",
+                Duration = 3
+            })
+        end)
+    end
+})
+MiscTab:CreateSection("Hitbox Expander")
+MiscTab:CreateToggle({
+    Name = "Enable Hitbox",
+    CurrentValue = getgenv().HomeSettings.HitboxEnabled,
+    Callback = function(v)
+        getgenv().HomeSettings.HitboxEnabled = v
+        if v then
+            for _, plr in pairs(game:GetService("Players"):GetPlayers()) do
+                if plr ~= game:GetService("Players").LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                    pcall(function()
+                        local root = plr.Character.HumanoidRootPart
+                        local hitboxSize = getgenv().HomeSettings.HitboxSize
+                        root.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
+                        root.Transparency = 0.7
+                        root.CanCollide = true
+                        root.Material = Enum.Material.Neon
+                        root.BrickColor = BrickColor.new("Really red")
+                        local adorn = Instance.new("BoxHandleAdornment")
+                        adorn.Size = root.Size
+                        adorn.Adornee = root
+                        adorn.Color3 = Color3.fromRGB(255, 0, 0)
+                        adorn.Transparency = 0.7
+                        adorn.AlwaysOnTop = true
+                        adorn.ZIndex = 5
+                        adorn.Parent = game:GetService("CoreGui")
+                        getgenv().HitboxAdornments[plr] = adorn
+                    end)
+                end
+            end
+            pcall(function()
+                Rayfield:Notify({
+                    Title = "Valox Hub",
+                    Content = "Hitbox Expander Enabled!",
+                    Duration = 4
+                })
+            end)
+        else
+            for _, plr in pairs(game:GetService("Players"):GetPlayers()) do
+                if plr ~= game:GetService("Players").LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                    pcall(function()
+                        local root = plr.Character.HumanoidRootPart
+                        root.Size = Vector3.new(2, 2, 1)
+                        root.Transparency = 1
+                        root.CanCollide = true
+                        root.Material = Enum.Material.Plastic
+                        root.BrickColor = BrickColor.new("Medium stone grey")
+                        if getgenv().HitboxAdornments[plr] then
+                            getgenv().HitboxAdornments[plr]:Destroy()
+                            getgenv().HitboxAdornments[plr] = nil
+                        end
+                    end)
+                end
+            end
+            pcall(function()
+                Rayfield:Notify({
+                    Title = "Valox Hub",
+                    Content = "Hitbox Expander Disabled!",
+                    Duration = 4
+                })
+            end)
+        end
+    end
+})
+MiscTab:CreateSlider({
+    Name = "Hitbox Size",
+    Range = {10, 200},
+    Increment = 5,
+    CurrentValue = getgenv().HomeSettings.HitboxSize,
+    Callback = function(v)
+        getgenv().HomeSettings.HitboxSize = v
+        if getgenv().HomeSettings.HitboxEnabled then
+            for _, plr in pairs(game:GetService("Players"):GetPlayers()) do
+                if plr ~= game:GetService("Players").LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                    pcall(function()
+                        local root = plr.Character.HumanoidRootPart
+                        root.Size = Vector3.new(v, v, v)
+                        if getgenv().HitboxAdornments[plr] then
+                            getgenv().HitboxAdornments[plr].Size = root.Size
+                        end
+                    end)
+                end
+            end
+        end
+    end
+})
+MiscTab:CreateSection("Anti-Fling")
+MiscTab:CreateToggle({
+    Name = "Anti-Fling",
+    CurrentValue = getgenv().MiscSettings.AntiFling,
+    Callback = function(v)
+        getgenv().MiscSettings.AntiFling = v
+        if v then
+            local antiFlingConn = game:GetService("RunService").RenderStepped:Connect(function()
+                if not getgenv().MiscSettings.AntiFling then return end
+                pcall(function()
+                    local char = game:GetService("Players").LocalPlayer.Character or game:GetService("Players").LocalPlayer.CharacterAdded:Wait()
+                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                    local hum = char:FindFirstChildOfClass("Humanoid")
+                    if char and hrp and hum then
+                        if not getgenv().AntiFlingParts[game:GetService("Players").LocalPlayer] then
+                            local XPart = Instance.new("Part", workspace)
+                            XPart.Position = hrp.Position + Vector3.new(0, 2, 0)
+                            XPart.Anchored = true
+                            XPart.CanCollide = false
+                            XPart.Transparency = 0.5
+                            local GUI = Instance.new("BillboardGui", XPart)
+                            GUI.Size = UDim2.new(4, 0, 2, 0)
+                            GUI.StudsOffsetWorldSpace = Vector3.new(0, 1.5, 0)
+                            local TextLabel = Instance.new("TextLabel", GUI)
+                            TextLabel.Text = "Anti Fling Part"
+                            TextLabel.Size = UDim2.new(1, 0, 1, 0)
+                            TextLabel.BackgroundTransparency = 1
+                            TextLabel.Font = Enum.Font.AmaticSC
+                            TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                            TextLabel.TextScaled = true
+                            getgenv().AntiFlingParts[game:GetService("Players").LocalPlayer] = XPart
+                        end
+                        local XPart = getgenv().AntiFlingParts[game:GetService("Players").LocalPlayer]
+                        if hrp.Velocity.Magnitude > 100 then
+                            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+                            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+                            getgenv().AntiFlingUpdate = false
+                            for _, v in ipairs(char:GetDescendants()) do
+                                if v:IsA("BasePart") then
+                                    v.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                                    v.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                                    v.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0)
+                                end
+                            end
+                            for _, plr in pairs(game:GetService("Players"):GetPlayers()) do
+                                if plr ~= game:GetService("Players").LocalPlayer then
+                                    local c = plr.Character
+                                    if c and c.Parent then
+                                        for _, v1 in pairs(c:GetDescendants()) do
+                                            if v1:IsA("BasePart") then
+                                                v1.Velocity = Vector3.new(0, 0, 0)
+                                                v1.RotVelocity = Vector3.new(0, 0, 0)
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                            hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                            hrp.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0)
+                            hrp.CFrame = XPart.CFrame
+                        else
+                            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+                            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+                            getgenv().AntiFlingUpdate = true
+                            hrp.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+                            for _, v in ipairs(char:GetDescendants()) do
+                                if v:IsA("BasePart") then
+                                    v.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+                                end
+                            end
+                        end
+                        if getgenv().AntiFlingUpdate then
+                            XPart.Position = hrp.Position + Vector3.new(0, 2, 0)
+                            XPart.CFrame = CFrame.lookAt(XPart.Position, XPart.Position + hrp.CFrame.LookVector)
+                        end
+                    end
+                end)
+            end)
+            table.insert(getgenv().Connections, antiFlingConn)
+            pcall(function()
+                Rayfield:Notify({
+                    Title = "Valox Hub",
+                    Content = "Valox Anti-Fling Enabled!",
+                    Duration = 4
+                })
+            end)
+        else
+            if getgenv().AntiFlingParts[game:GetService("Players").LocalPlayer] then
+                pcall(function()
+                    getgenv().AntiFlingParts[game:GetService("Players").LocalPlayer]:Destroy()
+                    getgenv().AntiFlingParts[game:GetService("Players").LocalPlayer] = nil
+                end)
+            end
+            pcall(function()
+                Rayfield:Notify({
+                    Title = "Valox Hub",
+                    Content = "Valox Anti-Fling Disabled!",
+                    Duration = 4
+                })
+            end)
+        end
+    end
+})
+MiscTab:CreateToggle({
+    Name = "Plastic Materials",
+    CurrentValue = getgenv().MiscSettings.PlasticMaterialsEnabled,
+    Callback = function(v)
+        local success, err = pcall(function()
+            if not updateWorldObjects then
+                error("updateWorldObjects is nil in toggle callback")
+            end
+            getgenv().MiscSettings.PlasticMaterialsEnabled = v
+            updateWorldObjects() -- Apply or revert material changes
+            Rayfield:Notify({
+                Title = "Valox Hub",
+                Content = "Plastic Materials " .. (v and "Enabled" or "Disabled") .. "!",
+                Duration = 4
+            })
+        end)
+        if not success then
+            warn("Plastic Materials Toggle Error: " .. tostring(err)) -- Log error for debugging
+            pcall(function()
+                Rayfield:Notify({
+                    Title = "Valox Hub Error",
+                    Content = "Failed to toggle Plastic Materials: " .. tostring(err),
+                    Duration = 5
+                })
+            end)
+        end
+    end
+})
+
+-- ======= Infinite Jump =======
+local infJumpConn
+infJumpConn = game:GetService("UserInputService").JumpRequest:Connect(function()
+    if getgenv().PlayerSettings.InfiniteJump and game:GetService("Players").LocalPlayer.Character then
+        local hum = game:GetService("Players").LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end)
+        end
+    end
+end)
+table.insert(getgenv().Connections, infJumpConn)
+
+-- ======= Final Setup =======
 getgenv().ScriptLoaded = true
 pcall(function()
     Rayfield:Notify({
         Title = "Valox Hub",
-        Content = "Valox Hub v1.7.4 has been loaded successfully!",
+        Content = "Valox Hub v1.7.4 loaded successfully!",
         Duration = 5
     })
 end)
-print("Valox Hub v1.7.4 fully loaded")
