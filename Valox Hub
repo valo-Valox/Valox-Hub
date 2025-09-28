@@ -1,4 +1,4 @@
--- Valox Hub v1.7.9
+-- Valox Hub v1.8.1
 -- ALL credits to Valox Creations
 -- Discord Link
 local DISCORD_LINK = "https://discord.gg/valoxhub"
@@ -180,10 +180,10 @@ local function ClearSkeletonLines()
 end
 
 local function ClearHitboxAdornments()
-    for plr, adorn in pairs(getgenv().HitboxAdornments) do
+    for _, adorn in pairs(getgenv().HitboxAdornments) do
         pcall(function() if adorn and adorn.Destroy then adorn:Destroy() end end)
-        getgenv().HitboxAdornments[plr] = nil
     end
+    getgenv().HitboxAdornments = {}
 end
 
 local function UnloadAll()
@@ -422,7 +422,23 @@ local success, err = pcall(function()
     HomeTab:CreateParagraph({
         Title = "Changelog",
         Content = [[
+### Version 1.7.11
+- Fixed callback error in Skeleton ESP toggle by improving error handling
+- Suppressed non-critical error notifications for Skeleton ESP
+- Added console logging for Skeleton ESP errors instead of UI notifications
+- Enhanced character and part validation in Skeleton ESP to prevent errors
+
+### Version 1.7.10
+- Fixed Skeleton ESP visibility toggle to update immediately without requiring reset
+- Ensured Skeleton ESP only activates for players when enabled
+- Improved Skeleton ESP render loop to enforce visibility
+- Added debug notifications for Skeleton ESP toggle and render issues
+
 ### Version 1.7.9
+- Added "Movement Settings" divider in Player tab
+- Improved Reset buttons for Walkspeed and Jump Power to update values properly
+- Converted Hitbox Expander to toggle with size slider and proper apply/reset functionality
+- Fixed Skeleton ESP line visibility and color application
 - Fixed Skeleton ESP not displaying lines
 - Added "Extra Settings" divider in Player tab for Fly, Noclip, Infinite Jump
 - Moved Unload Script button to top of Misc tab with divider
@@ -835,60 +851,36 @@ local success, err = pcall(function()
             Name = "Skeleton ESP",
             CurrentValue = getgenv().ESPSettings.SkeletonEnabled,
             Callback = function(v)
-                getgenv().ESPSettings.SkeletonEnabled = v
-                if not v then
-                    ClearSkeletonLines()
-                else
-                    for _, plr in pairs(Players:GetPlayers()) do
-                        if plr == LocalPlayer then continue end
-                        if plr.Character then
-                            local success, err = pcall(function()
-                                local char = plr.Character
-                                local root = char:FindFirstChild("HumanoidRootPart")
-                                if not root then return end
-                                local limbs = {
-                                    { "Head", "UpperTorso" },
-                                    { "UpperTorso", "LowerTorso" },
-                                    { "LowerTorso", "LeftUpperLeg" },
-                                    { "LowerTorso", "RightUpperLeg" },
-                                    { "LeftUpperLeg", "LeftLowerLeg" },
-                                    { "RightUpperLeg", "RightLowerLeg" },
-                                    { "LeftLowerLeg", "LeftFoot" },
-                                    { "RightLowerLeg", "RightFoot" },
-                                    { "UpperTorso", "LeftUpperArm" },
-                                    { "UpperTorso", "RightUpperArm" },
-                                    { "LeftUpperArm", "LeftLowerArm" },
-                                    { "RightUpperArm", "RightLowerArm" },
-                                    { "LeftLowerArm", "LeftHand" },
-                                    { "RightLowerArm", "RightHand" }
-                                }
-                                local lines = {}
-                                for _, limb in ipairs(limbs) do
-                                    local part1 = char:FindFirstChild(limb[1])
-                                    local part2 = char:FindFirstChild(limb[2])
-                                    if part1 and part2 then
-                                        local line = Drawing.new("Line")
-                                        line.Visible = false
-                                        line.Color = getgenv().ESPSettings.SkeletonColor
-                                        line.Thickness = 2
-                                        line.Transparency = 1
-                                        table.insert(lines, line)
-                                    end
-                                end
-                                getgenv().SkeletonLines[plr] = { Limbs = lines, Connection = nil }
-                            end)
-                            if not success then
-                                warn("Skeleton ESP init failed for " .. plr.Name .. ": " .. tostring(err))
-                                pcall(function()
-                                    Rayfield:Notify({
-                                        Title = "Valox Hub Error",
-                                        Content = "Failed to init Skeleton ESP for " .. plr.Name .. ": " .. tostring(err),
-                                        Duration = 5
-                                    })
-                                end)
+                local success, err = pcall(function()
+                    getgenv().ESPSettings.SkeletonEnabled = v
+                    if v then
+                        ClearSkeletonLines() -- Clear all existing lines to force reinitialization
+                        for _, plr in pairs(Players:GetPlayers()) do
+                            if plr == LocalPlayer then continue end
+                            if plr.Character then
+                                createSkeletonESP(plr)
                             end
                         end
+                        pcall(function()
+                            Rayfield:Notify({
+                                Title = "Valox Hub",
+                                Content = "Skeleton ESP enabled and reinitialized for all players.",
+                                Duration = 3
+                            })
+                        end)
+                    else
+                        ClearSkeletonLines()
+                        pcall(function()
+                            Rayfield:Notify({
+                                Title = "Valox Hub",
+                                Content = "Skeleton ESP disabled.",
+                                Duration = 3
+                            })
+                        end)
                     end
+                end)
+                if not success then
+                    warn("Skeleton ESP toggle error: " .. tostring(err)) -- Log to console only
                 end
             end
         })
@@ -985,6 +977,97 @@ local success, err = pcall(function()
         getgenv().ESPNames[plr] = billboard
     end
 
+    local function createSkeletonESP(plr)
+        if plr == LocalPlayer or not getgenv().ESPSettings.SkeletonEnabled then return end
+        local char = plr.Character
+        if not char or not char.Parent or not char:FindFirstChild("HumanoidRootPart") or not char:FindFirstChildOfClass("Humanoid") then return end
+        local success, err = pcall(function()
+            local root = char:FindFirstChild("HumanoidRootPart")
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not root or not hum or hum.Health <= 0 then return end
+            local limbs = {
+                { "Head", "UpperTorso" },
+                { "UpperTorso", "LowerTorso" },
+                { "LowerTorso", "LeftUpperLeg" },
+                { "LowerTorso", "RightUpperLeg" },
+                { "LeftUpperLeg", "LeftLowerLeg" },
+                { "RightUpperLeg", "RightLowerLeg" },
+                { "LeftLowerLeg", "LeftFoot" },
+                { "RightLowerLeg", "RightFoot" },
+                { "UpperTorso", "LeftUpperArm" },
+                { "UpperTorso", "RightUpperArm" },
+                { "LeftUpperArm", "LeftLowerArm" },
+                { "RightUpperArm", "RightLowerArm" },
+                { "LeftLowerArm", "LeftHand" },
+                { "RightLowerArm", "RightHand" }
+            }
+            local lines = {}
+            for _, limb in ipairs(limbs) do
+                local part1 = char:FindFirstChild(limb[1])
+                local part2 = char:FindFirstChild(limb[2])
+                if part1 and part2 then
+                    local line = Drawing.new("Line")
+                    line.Visible = getgenv().ESPSettings.SkeletonEnabled
+                    line.Color = getgenv().ESPSettings.SkeletonColor
+                    line.Thickness = 2
+                    line.Transparency = 1
+                    table.insert(lines, line)
+                end
+            end
+            local conn = RunService.RenderStepped:Connect(function()
+                local char = plr.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                local distance = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and root and (root.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or math.huge
+                if not char or not char.Parent or not root or not hum or hum.Health <= 0 or not getgenv().ESPSettings.SkeletonEnabled or distance > getgenv().ESPSettings.MaxDistance then
+                    pcall(function()
+                        for _, line in pairs(lines) do
+                            line.Visible = false
+                            line:Remove()
+                        end
+                        conn:Disconnect()
+                        getgenv().SkeletonLines[plr] = nil
+                    end)
+                    return
+                end
+                local i = 1
+                for _, limb in ipairs(limbs) do
+                    local part1 = char:FindFirstChild(limb[1])
+                    local part2 = char:FindFirstChild(limb[2])
+                    if part1 and part2 and lines[i] then
+                        local success, err = pcall(function()
+                            local pos1, visible1 = Camera:WorldToViewportPoint(part1.Position)
+                            local pos2, visible2 = Camera:WorldToViewportPoint(part2.Position)
+                            lines[i].Visible = getgenv().ESPSettings.SkeletonEnabled and visible1 and visible2 and distance <= getgenv().ESPSettings.MaxDistance
+                            lines[i].From = Vector2.new(pos1.X, pos1.Y)
+                            lines[i].To = Vector2.new(pos2.X, pos2.Y)
+                            lines[i].Color = getgenv().ESPSettings.SkeletonColor
+                            lines[i].Thickness = 2
+                            lines[i].Transparency = 1
+                        end)
+                        if not success then
+                            warn("Skeleton ESP render failed for " .. plr.Name .. ": " .. tostring(err)) -- Log to console only
+                        end
+                        i = i + 1
+                    elseif lines[i] then
+                        lines[i].Visible = false
+                    end
+                end
+            end)
+            getgenv().SkeletonLines[plr] = { Limbs = lines, Connection = conn }
+            pcall(function()
+                Rayfield:Notify({
+                    Title = "Valox Hub",
+                    Content = "Skeleton ESP initialized for " .. plr.Name,
+                    Duration = 3
+                })
+            end)
+        end)
+        if not success then
+            warn("Skeleton ESP creation failed for " .. plr.Name .. ": " .. tostring(err)) -- Log to console only
+        end
+    end
+
     local function updateESP()
         if not (getgenv().ESPSettings.Enabled or getgenv().ESPSettings.SkeletonEnabled or getgenv().ESPSettings.NamesEnabled) then return end
         for _, plr in pairs(Players:GetPlayers()) do
@@ -1041,98 +1124,7 @@ local success, err = pcall(function()
                 end
             end
             if getgenv().ESPSettings.SkeletonEnabled and not getgenv().SkeletonLines[plr] then
-                local success, err = pcall(function()
-                    local char = plr.Character
-                    local root = char:FindFirstChild("HumanoidRootPart")
-                    if not root then return end
-                    local limbs = {
-                        { "Head", "UpperTorso" },
-                        { "UpperTorso", "LowerTorso" },
-                        { "LowerTorso", "LeftUpperLeg" },
-                        { "LowerTorso", "RightUpperLeg" },
-                        { "LeftUpperLeg", "LeftLowerLeg" },
-                        { "RightUpperLeg", "RightLowerLeg" },
-                        { "LeftLowerLeg", "LeftFoot" },
-                        { "RightLowerLeg", "RightFoot" },
-                        { "UpperTorso", "LeftUpperArm" },
-                        { "UpperTorso", "RightUpperArm" },
-                        { "LeftUpperArm", "LeftLowerArm" },
-                        { "RightUpperArm", "RightLowerArm" },
-                        { "LeftLowerArm", "LeftHand" },
-                        { "RightLowerArm", "RightHand" }
-                    }
-                    local lines = {}
-                    for _, limb in ipairs(limbs) do
-                        local part1 = char:FindFirstChild(limb[1])
-                        local part2 = char:FindFirstChild(limb[2])
-                        if part1 and part2 then
-                            local line = Drawing.new("Line")
-                            line.Visible = false
-                            line.Color = getgenv().ESPSettings.SkeletonColor
-                            line.Thickness = 2
-                            line.Transparency = 1
-                            table.insert(lines, line)
-                        end
-                    end
-                    local conn = RunService.RenderStepped:Connect(function()
-                        local char = plr.Character
-                        local root = char and char:FindFirstChild("HumanoidRootPart")
-                        local hum = char and char:FindFirstChildOfClass("Humanoid")
-                        local distance = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and root and (root.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or math.huge
-                        if not char or not char.Parent or not root or not hum or hum.Health <= 0 or not getgenv().ESPSettings.SkeletonEnabled or distance > getgenv().ESPSettings.MaxDistance then
-                            pcall(function()
-                                for _, line in pairs(lines) do
-                                    line.Visible = false
-                                    line:Remove()
-                                end
-                                conn:Disconnect()
-                                getgenv().SkeletonLines[plr] = nil
-                            end)
-                            return
-                        end
-                        local i = 1
-                        for _, limb in ipairs(limbs) do
-                            local part1 = char:FindFirstChild(limb[1])
-                            local part2 = char:FindFirstChild(limb[2])
-                            if part1 and part2 and lines[i] then
-                                local success, err = pcall(function()
-                                    local pos1, visible1 = Camera:WorldToViewportPoint(part1.Position)
-                                    local pos2, visible2 = Camera:WorldToViewportPoint(part2.Position)
-                                    lines[i].Visible = visible1 and visible2 and distance <= getgenv().ESPSettings.MaxDistance
-                                    lines[i].From = Vector2.new(pos1.X, pos1.Y)
-                                    lines[i].To = Vector2.new(pos2.X, pos2.Y)
-                                    lines[i].Color = getgenv().ESPSettings.SkeletonColor
-                                    lines[i].Thickness = 2
-                                    lines[i].Transparency = 1
-                                end)
-                                if not success then
-                                    warn("Skeleton ESP update failed for " .. plr.Name .. ": " .. tostring(err))
-                                    pcall(function()
-                                        Rayfield:Notify({
-                                            Title = "Valox Hub Error",
-                                            Content = "Skeleton ESP update failed for " .. plr.Name .. ": " .. tostring(err),
-                                            Duration = 5
-                                        })
-                                    end)
-                                end
-                                i = i + 1
-                            elseif lines[i] then
-                                lines[i].Visible = false
-                            end
-                        end
-                    end)
-                    getgenv().SkeletonLines[plr] = { Limbs = lines, Connection = conn }
-                end)
-                if not success then
-                    warn("Skeleton ESP creation failed for " .. plr.Name .. ": " .. tostring(err))
-                    pcall(function()
-                        Rayfield:Notify({
-                            Title = "Valox Hub Error",
-                            Content = "Failed to create Skeleton ESP for " .. plr.Name .. ": " .. tostring(err),
-                            Duration = 5
-                        })
-                    end)
-                end
+                createSkeletonESP(plr)
             end
             if getgenv().ESPBoxes[plr] then
                 pcall(function()
@@ -1207,6 +1199,74 @@ local success, err = pcall(function()
                 updateWorldObjects()
             end
         })
+        MiscTab:CreateToggle({
+            Name = "Enable Hitbox Expander",
+            CurrentValue = getgenv().HomeSettings.HitboxEnabled,
+            Callback = function(v)
+                getgenv().HomeSettings.HitboxEnabled = v
+                if v then
+                    for _, plr in pairs(Players:GetPlayers()) do
+                        if plr == LocalPlayer then continue end
+                        local char = plr.Character
+                        if char and char:FindFirstChild("HumanoidRootPart") then
+                            local root = char.HumanoidRootPart
+                            local size = getgenv().HomeSettings.HitboxSize
+                            root.Size = Vector3.new(size, size, size)
+                            root.Transparency = 0.7
+                            root.Material = Enum.Material.Neon
+                            root.BrickColor = BrickColor.new("Really red")
+                            local adorn = Instance.new("BoxHandleAdornment")
+                            adorn.Size = root.Size
+                            adorn.Adornee = root
+                            adorn.Color3 = Color3.fromRGB(255, 0, 0)
+                            adorn.Transparency = 0.7
+                            adorn.AlwaysOnTop = false
+                            adorn.ZIndex = 0
+                            adorn.Parent = CoreGui
+                            getgenv().HitboxAdornments[plr] = adorn
+                        end
+                    end
+                else
+                    for _, plr in pairs(Players:GetPlayers()) do
+                        if plr == LocalPlayer then continue end
+                        local char = plr.Character
+                        if char and char:FindFirstChild("HumanoidRootPart") then
+                            local root = char.HumanoidRootPart
+                            root.Size = Vector3.new(2, 2, 1)
+                            root.Transparency = 1
+                            root.Material = Enum.Material.Plastic
+                            root.BrickColor = BrickColor.new("Medium stone grey")
+                            if getgenv().HitboxAdornments[plr] then
+                                getgenv().HitboxAdornments[plr]:Destroy()
+                                getgenv().HitboxAdornments[plr] = nil
+                            end
+                        end
+                    end
+                end
+            end
+        })
+        MiscTab:CreateSlider({
+            Name = "Hitbox Size",
+            Range = {10, 200},
+            Increment = 5,
+            CurrentValue = getgenv().HomeSettings.HitboxSize,
+            Callback = function(v)
+                getgenv().HomeSettings.HitboxSize = v
+                if getgenv().HomeSettings.HitboxEnabled then
+                    for _, plr in pairs(Players:GetPlayers()) do
+                        if plr == LocalPlayer then continue end
+                        local char = plr.Character
+                        if char and char:FindFirstChild("HumanoidRootPart") then
+                            local root = char.HumanoidRootPart
+                            root.Size = Vector3.new(v, v, v)
+                            if getgenv().HitboxAdornments[plr] then
+                                getgenv().HitboxAdornments[plr].Size = root.Size
+                            end
+                        end
+                    end
+                end
+            end
+        })
         MiscTab:CreateButton({
             Name = "Bring All",
             Callback = function()
@@ -1220,32 +1280,6 @@ local success, err = pcall(function()
                         pcall(function()
                             pchar.HumanoidRootPart.CFrame = root.CFrame * CFrame.new(Vector3.new(math.random(-5, 5), 0, math.random(-5, 5)))
                         end)
-                    end
-                end
-            end
-        })
-        MiscTab:CreateButton({
-            Name = "Hitbox Expander",
-            Callback = function()
-                if not getgenv().HomeSettings.HitboxEnabled then return end
-                for _, plr in pairs(Players:GetPlayers()) do
-                    if plr == LocalPlayer then continue end
-                    local char = plr.Character
-                    if char and char:FindFirstChild("HumanoidRootPart") then
-                        local root = char.HumanoidRootPart
-                        root.Size = Vector3.new(getgenv().HomeSettings.HitboxSize, getgenv().HomeSettings.HitboxSize, getgenv().HomeSettings.HitboxSize)
-                        root.Transparency = 0.7
-                        root.BrickColor = BrickColor.new("Really red")
-                        root.Material = Enum.Material.Neon
-                        local adorn = Instance.new("BoxHandleAdornment")
-                        adorn.Size = root.Size
-                        adorn.Adornee = root
-                        adorn.Color3 = Color3.fromRGB(255, 0, 0)
-                        adorn.Transparency = 0.7
-                        adorn.AlwaysOnTop = false
-                        adorn.ZIndex = 0
-                        adorn.Parent = CoreGui
-                        getgenv().HitboxAdornments[plr] = adorn
                     end
                 end
             end
@@ -1281,7 +1315,7 @@ local success, err = pcall(function()
 
     -- ======= Player Tab =======
     local success, err = pcall(function()
-        PlayerTab:CreateSection("Player Settings")
+        PlayerTab:CreateSection("Movement Settings")
         PlayerTab:CreateToggle({
             Name = "Walkspeed",
             CurrentValue = getgenv().PlayerSettings.WalkspeedEnabled,
@@ -1529,103 +1563,14 @@ local success, err = pcall(function()
         end
         if getgenv().ESPSettings.SkeletonEnabled then
             local char = plr.Character or plr.CharacterAdded:Wait()
-            local success, err = pcall(function()
-                local root = char:FindFirstChild("HumanoidRootPart")
-                if not root then return end
-                local limbs = {
-                    { "Head", "UpperTorso" },
-                    { "UpperTorso", "LowerTorso" },
-                    { "LowerTorso", "LeftUpperLeg" },
-                    { "LowerTorso", "RightUpperLeg" },
-                    { "LeftUpperLeg", "LeftLowerLeg" },
-                    { "RightUpperLeg", "RightLowerLeg" },
-                    { "LeftLowerLeg", "LeftFoot" },
-                    { "RightLowerLeg", "RightFoot" },
-                    { "UpperTorso", "LeftUpperArm" },
-                    { "UpperTorso", "RightUpperArm" },
-                    { "LeftUpperArm", "LeftLowerArm" },
-                    { "RightUpperArm", "RightLowerArm" },
-                    { "LeftLowerArm", "LeftHand" },
-                    { "RightLowerArm", "RightHand" }
-                }
-                local lines = {}
-                for _, limb in ipairs(limbs) do
-                    local part1 = char:FindFirstChild(limb[1])
-                    local part2 = char:FindFirstChild(limb[2])
-                    if part1 and part2 then
-                        local line = Drawing.new("Line")
-                        line.Visible = false
-                        line.Color = getgenv().ESPSettings.SkeletonColor
-                        line.Thickness = 2
-                        line.Transparency = 1
-                        table.insert(lines, line)
-                    end
-                end
-                local conn = RunService.RenderStepped:Connect(function()
-                    local char = plr.Character
-                    local root = char and char:FindFirstChild("HumanoidRootPart")
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    local distance = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and root and (root.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or math.huge
-                    if not char or not char.Parent or not root or not hum or hum.Health <= 0 or not getgenv().ESPSettings.SkeletonEnabled or distance > getgenv().ESPSettings.MaxDistance then
-                        pcall(function()
-                            for _, line in pairs(lines) do
-                                line.Visible = false
-                                line:Remove()
-                            end
-                            conn:Disconnect()
-                            getgenv().SkeletonLines[plr] = nil
-                        end)
-                        return
-                    end
-                    local i = 1
-                    for _, limb in ipairs(limbs) do
-                        local part1 = char:FindFirstChild(limb[1])
-                        local part2 = char:FindFirstChild(limb[2])
-                        if part1 and part2 and lines[i] then
-                            local success, err = pcall(function()
-                                local pos1, visible1 = Camera:WorldToViewportPoint(part1.Position)
-                                local pos2, visible2 = Camera:WorldToViewportPoint(part2.Position)
-                                lines[i].Visible = visible1 and visible2 and distance <= getgenv().ESPSettings.MaxDistance
-                                lines[i].From = Vector2.new(pos1.X, pos1.Y)
-                                lines[i].To = Vector2.new(pos2.X, pos2.Y)
-                                lines[i].Color = getgenv().ESPSettings.SkeletonColor
-                                lines[i].Thickness = 2
-                                lines[i].Transparency = 1
-                            end)
-                            if not success then
-                                warn("Skeleton ESP update failed for " .. plr.Name .. ": " .. tostring(err))
-                                pcall(function()
-                                    Rayfield:Notify({
-                                        Title = "Valox Hub Error",
-                                        Content = "Skeleton ESP update failed for " .. plr.Name .. ": " .. tostring(err),
-                                        Duration = 5
-                                    })
-                                end)
-                            end
-                            i = i + 1
-                        elseif lines[i] then
-                            lines[i].Visible = false
-                        end
-                    end
-                end)
-                getgenv().SkeletonLines[plr] = { Limbs = lines, Connection = conn }
-            end)
-            if not success then
-                warn("Skeleton ESP creation failed for new player " .. plr.Name .. ": " .. tostring(err))
-                pcall(function()
-                    Rayfield:Notify({
-                        Title = "Valox Hub Error",
-                        Content = "Failed to create Skeleton ESP for " .. plr.Name .. ": " .. tostring(err),
-                        Duration = 5
-                    })
-                end)
-            end
+            createSkeletonESP(plr)
         end
         if getgenv().HomeSettings.HitboxEnabled then
             local char = plr.Character or plr.CharacterAdded:Wait()
             local root = char:WaitForChild("HumanoidRootPart")
             local success, err = pcall(function()
-                root.Size = Vector3.new(getgenv().HomeSettings.HitboxSize, getgenv().HomeSettings.HitboxSize, getgenv().HomeSettings.HitboxSize)
+                local size = getgenv().HomeSettings.HitboxSize
+                root.Size = Vector3.new(size, size, size)
                 root.Transparency = 0.7
                 root.BrickColor = BrickColor.new("Really red")
                 root.Material = Enum.Material.Neon
@@ -1683,12 +1628,27 @@ local success, err = pcall(function()
             pcall(function() getgenv().HitboxAdornments[plr]:Destroy() end)
             getgenv().HitboxAdornments[plr] = nil
         end
+        if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            local root = plr.Character.HumanoidRootPart
+            root.Size = Vector3.new(2, 2, 1)
+            root.Transparency = 1
+            root.Material = Enum.Material.Plastic
+            root.BrickColor = BrickColor.new("Medium stone grey")
+        end
     end)
 
     LocalPlayer.CharacterAdded:Connect(function(char)
         local root = char:WaitForChild("HumanoidRootPart")
         if getgenv().PlayerSettings.FlyEnabled then
             toggleFly()
+        end
+        if getgenv().ESPSettings.SkeletonEnabled then
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr == LocalPlayer then continue end
+                if plr.Character then
+                    createSkeletonESP(plr)
+                end
+            end
         end
     end)
 
@@ -1727,7 +1687,7 @@ local success, err = pcall(function()
     pcall(function()
         Rayfield:Notify({
             Title = "Valox Hub",
-            Content = "Valox Hub v1.7.9 loaded successfully!",
+            Content = "Valox Hub v1.7.11 loaded successfully!",
             Duration = 5
         })
     end)
