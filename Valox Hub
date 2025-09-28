@@ -1436,7 +1436,7 @@ local success, err = pcall(function()
     })
 
     MiscTab:CreateToggle({
-        Name = "Plastic Materials",
+        Name =Low GFX",
         CurrentValue = getgenv().MiscSettings.PlasticMaterialsEnabled,
         Callback = function(v)
             local success, err = pcall(function()
