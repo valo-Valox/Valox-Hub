@@ -1,7 +1,7 @@
 -- Valox Hub v1.8.7
 -- ALL credits to Valox Creations
 -- Discord Link
-local DISCORD_LINK = "https://discord.gg/valoxhub"
+local DISCORD_LINK = "https://discord.gg/28TVJCe5Kc"
 
 -- ======= Cleanup previous runs =======
 if getgenv().Rayfield and type(getgenv().Rayfield.Destroy) == "function" then
