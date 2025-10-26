@@ -308,6 +308,11 @@ getgenv().Rayfield = Rayfield
 -- ======= Mobile check =======
 local isMobile = UserInputService.TouchEnabled or (UserInputService.KeyboardEnabled == false)
 
+-- Set circle visible to false on mobile
+if isMobile then
+    getgenv().CircleSettings.Visible = false
+end
+
 -- ======= UI Creation =======
 local Window
 local success, err = pcall(function()
@@ -333,14 +338,11 @@ end
 -- ======= Tab Creation =======
 local success, err = pcall(function()
     local HomeTab = Window:CreateTab("Home", "home")
-    local AimbotTab, CircleTab, ESPTab, MiscTab, PlayerTab
-    if not isMobile then
-        AimbotTab = Window:CreateTab("Aimbot", "target")
-        CircleTab = Window:CreateTab("Circle", "circle")
-    end
-    ESPTab = Window:CreateTab("ESP", "eye")
-    MiscTab = Window:CreateTab("Misc", "settings")
-    PlayerTab = Window:CreateTab("Player", "user")
+    local AimbotTab = Window:CreateTab("Aimbot", "target")
+    local CircleTab = Window:CreateTab("Circle", "circle")
+    local ESPTab = Window:CreateTab("ESP", "eye")
+    local MiscTab = Window:CreateTab("Misc", "settings")
+    local PlayerTab = Window:CreateTab("Player", "user")
 
     -- ======= Home Tab: Discord Link, Hub Launcher & Changelog =======
     HomeTab:CreateSection("Community")
@@ -537,287 +539,283 @@ local success, err = pcall(function()
         ]]
     })
 
-    -- ======= Aimbot Tab (Non-Mobile) =======
+    -- ======= Aimbot Tab =======
     local aimConn = nil
-    if not isMobile then
-        local success, err = pcall(function()
-            AimbotTab:CreateSection("Aimbot Settings")
-            AimbotTab:CreateToggle({
-                Name = "Enable Aimbot",
-                CurrentValue = getgenv().AimbotSettings.Enabled,
-                Callback = function(v)
-                    getgenv().AimbotSettings.Enabled = v
-                    if not v then
-                        getgenv().AimbotSettings.LockedTarget = nil
-                    end
-                end
-            })
-            AimbotTab:CreateToggle({
-                Name = "Smart Aimbot",
-                CurrentValue = getgenv().AimbotSettings.SmartAimbot,
-                Callback = function(v) getgenv().AimbotSettings.SmartAimbot = v end
-            })
-            AimbotTab:CreateToggle({
-                Name = "Lock Target",
-                CurrentValue = getgenv().AimbotSettings.LockTarget,
-                Callback = function(v)
-                    getgenv().AimbotSettings.LockTarget = v
-                    if not v then
-                        getgenv().AimbotSettings.LockedTarget = nil
-                    end
-                end
-            })
-            AimbotTab:CreateToggle({
-                Name = "Team Check",
-                CurrentValue = getgenv().AimbotSettings.TeamCheck,
-                Callback = function(v) getgenv().AimbotSettings.TeamCheck = v end
-            })
-            AimbotTab:CreateDropdown({
-                Name = "Prediction",
-                Options = {"Off", "Low", "Medium", "High"},
-                CurrentOption = {getgenv().AimbotSettings.Prediction},
-                Callback = function(opt) getgenv().AimbotSettings.Prediction = opt[1] end
-            })
-            AimbotTab:CreateDropdown({
-                Name = "Smoothing",
-                Options = {"Off", "Low", "Medium", "High"},
-                CurrentOption = {getgenv().AimbotSettings.Smoothing},
-                Callback = function(opt) getgenv().AimbotSettings.Smoothing = opt[1] end
-            })
-            AimbotTab:CreateDropdown({
-                Name = "Toggle Mode",
-                Options = {"Hold", "Toggle"},
-                CurrentOption = {getgenv().AimbotSettings.Mode},
-                Callback = function(opt) getgenv().AimbotSettings.Mode = opt[1] end
-            })
-            AimbotTab:CreateDropdown({
-                Name = "Target Part",
-                Options = {"Head", "Torso"},
-                CurrentOption = {getgenv().AimbotSettings.TargetPart},
-                Callback = function(opt) getgenv().AimbotSettings.TargetPart = opt[1] end
-            })
-        end)
-        if not success then
-            warn("AimbotTab creation failed: " .. tostring(err))
-            if not getgenv().MiscSettings.DisableNotifications then
-                Rayfield:Notify({
-                    Title = "Valox Hub Error",
-                    Content = "Failed to create Aimbot tab: " .. tostring(err),
-                    Duration = 5
-                })
-            end
-        end
-
-        local aimActive = false
-        UserInputService.InputBegan:Connect(function(input, processed)
-            if processed then return end
-            if getgenv().AimbotSettings.Mode == "Hold" and input.UserInputType == Enum.UserInputType.MouseButton2 then
-                aimActive = true
-            elseif getgenv().AimbotSettings.Mode == "Toggle" and input.UserInputType == Enum.UserInputType.MouseButton2 then
-                aimActive = not aimActive
-            end
-        end)
-        UserInputService.InputEnded:Connect(function(input)
-            if getgenv().AimbotSettings.Mode == "Hold" and input.UserInputType == Enum.UserInputType.MouseButton2 then
-                aimActive = false
-            end
-        end)
-
-        local function smoothingFactorFromSetting()
-            local s = getgenv().AimbotSettings.Smoothing
-            return (s == "Off" and 1) or (s == "Low" and 0.15) or (s == "Medium" and 0.08) or (s == "High" and 0.03) or 0.1
-        end
-
-        local function getClosest()
-            local mousePos = UserInputService:GetMouseLocation()
-            if getgenv().AimbotSettings.LockTarget and getgenv().AimbotSettings.LockedTarget then
-                local target = getgenv().AimbotSettings.LockedTarget
-                local char = target.Character
-                local hum = char and char:FindFirstChildOfClass("Humanoid")
-                local root = char and char:FindFirstChild("HumanoidRootPart")
-                if hum and root and hum.Health > 0 then
-                    if getgenv().AimbotSettings.TeamCheck and target.Team == LocalPlayer.Team then
-                        getgenv().AimbotSettings.LockedTarget = nil
-                    else
-                        local screenPos, onScreen = Camera:WorldToViewportPoint(root.Position)
-                        if onScreen and (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(mousePos.X, mousePos.Y)).Magnitude <= getgenv().CircleSettings.FOV then
-                            return target
-                        else
-                            getgenv().AimbotSettings.LockedTarget = nil
-                        end
-                    end
-                else
+    local success, err = pcall(function()
+        AimbotTab:CreateSection("Aimbot Settings")
+        AimbotTab:CreateToggle({
+            Name = "Enable Aimbot",
+            CurrentValue = getgenv().AimbotSettings.Enabled,
+            Callback = function(v)
+                getgenv().AimbotSettings.Enabled = v
+                if not v then
                     getgenv().AimbotSettings.LockedTarget = nil
                 end
             end
-            local closest, shortestDist = nil, math.huge
-            for _, plr in pairs(Players:GetPlayers()) do
-                if plr == LocalPlayer then continue end
-                local char = plr.Character
-                local hum = char and char:FindFirstChildOfClass("Humanoid")
-                local root = char and char:FindFirstChild("HumanoidRootPart")
-                if hum and root and hum.Health > 0 then
-                    if getgenv().AimbotSettings.TeamCheck and plr.Team == LocalPlayer.Team then continue end
-                    local screenPos, onScreen = Camera:WorldToViewportPoint(root.Position)
-                    if not onScreen then continue end
-                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(mousePos.X, mousePos.Y)).Magnitude
-                    if dist < shortestDist and dist <= getgenv().CircleSettings.FOV then
-                        closest = plr
-                        shortestDist = dist
-                    end
+        })
+        AimbotTab:CreateToggle({
+            Name = "Smart Aimbot",
+            CurrentValue = getgenv().AimbotSettings.SmartAimbot,
+            Callback = function(v) getgenv().AimbotSettings.SmartAimbot = v end
+        })
+        AimbotTab:CreateToggle({
+            Name = "Lock Target",
+            CurrentValue = getgenv().AimbotSettings.LockTarget,
+            Callback = function(v)
+                getgenv().AimbotSettings.LockTarget = v
+                if not v then
+                    getgenv().AimbotSettings.LockedTarget = nil
                 end
             end
-            if closest and getgenv().AimbotSettings.LockTarget and not getgenv().AimbotSettings.LockedTarget then
-                local char = closest.Character
-                local root = char and char:FindFirstChild("HumanoidRootPart")
-                if root then
+        })
+        AimbotTab:CreateToggle({
+            Name = "Team Check",
+            CurrentValue = getgenv().AimbotSettings.TeamCheck,
+            Callback = function(v) getgenv().AimbotSettings.TeamCheck = v end
+        })
+        AimbotTab:CreateDropdown({
+            Name = "Prediction",
+            Options = {"Off", "Low", "Medium", "High"},
+            CurrentOption = {getgenv().AimbotSettings.Prediction},
+            Callback = function(opt) getgenv().AimbotSettings.Prediction = opt[1] end
+        })
+        AimbotTab:CreateDropdown({
+            Name = "Smoothing",
+            Options = {"Off", "Low", "Medium", "High"},
+            CurrentOption = {getgenv().AimbotSettings.Smoothing},
+            Callback = function(opt) getgenv().AimbotSettings.Smoothing = opt[1] end
+        })
+        AimbotTab:CreateDropdown({
+            Name = "Toggle Mode",
+            Options = {"Hold", "Toggle"},
+            CurrentOption = {getgenv().AimbotSettings.Mode},
+            Callback = function(opt) getgenv().AimbotSettings.Mode = opt[1] end
+        })
+        AimbotTab:CreateDropdown({
+            Name = "Target Part",
+            Options = {"Head", "Torso"},
+            CurrentOption = {getgenv().AimbotSettings.TargetPart},
+            Callback = function(opt) getgenv().AimbotSettings.TargetPart = opt[1] end
+        })
+    end)
+    if not success then
+        warn("AimbotTab creation failed: " .. tostring(err))
+        if not getgenv().MiscSettings.DisableNotifications then
+            Rayfield:Notify({
+                Title = "Valox Hub Error",
+                Content = "Failed to create Aimbot tab: " .. tostring(err),
+                Duration = 5
+            })
+        end
+    end
+
+    local aimActive = false
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        if getgenv().AimbotSettings.Mode == "Hold" and input.UserInputType == Enum.UserInputType.MouseButton2 then
+            aimActive = true
+        elseif getgenv().AimbotSettings.Mode == "Toggle" and input.UserInputType == Enum.UserInputType.MouseButton2 then
+            aimActive = not aimActive
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if getgenv().AimbotSettings.Mode == "Hold" and input.UserInputType == Enum.UserInputType.MouseButton2 then
+            aimActive = false
+        end
+    end)
+
+    local function smoothingFactorFromSetting()
+        local s = getgenv().AimbotSettings.Smoothing
+        return (s == "Off" and 1) or (s == "Low" and 0.15) or (s == "Medium" and 0.08) or (s == "High" and 0.03) or 0.1
+    end
+
+    local function getClosest()
+        local mousePos = UserInputService:GetMouseLocation()
+        if getgenv().AimbotSettings.LockTarget and getgenv().AimbotSettings.LockedTarget then
+            local target = getgenv().AimbotSettings.LockedTarget
+            local char = target.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if hum and root and hum.Health > 0 then
+                if getgenv().AimbotSettings.TeamCheck and target.Team == LocalPlayer.Team then
+                    getgenv().AimbotSettings.LockedTarget = nil
+                else
                     local screenPos, onScreen = Camera:WorldToViewportPoint(root.Position)
                     if onScreen and (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(mousePos.X, mousePos.Y)).Magnitude <= getgenv().CircleSettings.FOV then
-                        getgenv().AimbotSettings.LockedTarget = closest
+                        return target
+                    else
+                        getgenv().AimbotSettings.LockedTarget = nil
                     end
                 end
+            else
+                getgenv().AimbotSettings.LockedTarget = nil
             end
-            return closest
         end
-
-        aimConn = RunService.RenderStepped:Connect(function()
-            if not getgenv().AimbotSettings.Enabled then return end
-            if getgenv().AimbotSettings.Mode == "Hold" and not aimActive then return end
-            if getgenv().AimbotSettings.Mode == "Toggle" and not aimActive then return end
-            local target = getClosest()
-            if not target or not target.Character then return end
-            local hum = target.Character:FindFirstChildOfClass("Humanoid")
-            if not hum or hum.Health <= 0 then return end
-            local finalPart = getAimPartFromName(target.Character, getgenv().AimbotSettings.TargetPart)
-            if not finalPart then return end
-            if getgenv().AimbotSettings.SmartAimbot then
-                local origin = Camera.CFrame.Position
-                local direction = (finalPart.Position - origin)
-                local rayParams = RaycastParams.new()
-                rayParams.FilterType = Enum.RaycastFilterType.Blacklist
-                rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
-                local result = workspace:Raycast(origin, direction, rayParams)
-                if result and result.Instance and result.Instance:IsA("BasePart") and not result.Instance:IsDescendantOf(target.Character) then
-                    local headPart = target.Character:FindFirstChild("Head")
-                    if headPart and finalPart ~= headPart then
-                        finalPart = headPart
-                    end
+        local closest, shortestDist = nil, math.huge
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr == LocalPlayer then continue end
+            local char = plr.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if hum and root and hum.Health > 0 then
+                if getgenv().AimbotSettings.TeamCheck and plr.Team == LocalPlayer.Team then continue end
+                local screenPos, onScreen = Camera:WorldToViewportPoint(root.Position)
+                if not onScreen then continue end
+                local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(mousePos.X, mousePos.Y)).Magnitude
+                if dist < shortestDist and dist <= getgenv().CircleSettings.FOV then
+                    closest = plr
+                    shortestDist = dist
                 end
             end
-            local targetPos = finalPart.Position
-            local hrp = target.Character:FindFirstChild("HumanoidRootPart")
-            if hrp and getgenv().AimbotSettings.Prediction ~= "Off" then
-                local mult = (getgenv().AimbotSettings.Prediction == "Low" and 0.06)
-                    or (getgenv().AimbotSettings.Prediction == "Medium" and 0.11)
-                    or (getgenv().AimbotSettings.Prediction == "High" and 0.2)
-                    or 0
-                targetPos = targetPos + hrp.Velocity * mult
+        end
+        if closest and getgenv().AimbotSettings.LockTarget and not getgenv().AimbotSettings.LockedTarget then
+            local char = closest.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if root then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(root.Position)
+                if onScreen and (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(mousePos.X, mousePos.Y)).Magnitude <= getgenv().CircleSettings.FOV then
+                    getgenv().AimbotSettings.LockedTarget = closest
+                end
             end
-            local camCF = Camera.CFrame
-            local wanted = CFrame.new(camCF.Position, targetPos)
-            Camera.CFrame = camCF:Lerp(wanted, smoothingFactorFromSetting())
-        end)
-        table.insert(getgenv().Connections, aimConn)
+        end
+        return closest
     end
 
-    -- ======= Circle Tab (Non-Mobile) =======
+    aimConn = RunService.RenderStepped:Connect(function()
+        if not getgenv().AimbotSettings.Enabled then return end
+        if getgenv().AimbotSettings.Mode == "Hold" and not aimActive then return end
+        if getgenv().AimbotSettings.Mode == "Toggle" and not aimActive then return end
+        local target = getClosest()
+        if not target or not target.Character then return end
+        local hum = target.Character:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then return end
+        local finalPart = getAimPartFromName(target.Character, getgenv().AimbotSettings.TargetPart)
+        if not finalPart then return end
+        if getgenv().AimbotSettings.SmartAimbot then
+            local origin = Camera.CFrame.Position
+            local direction = (finalPart.Position - origin)
+            local rayParams = RaycastParams.new()
+            rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+            rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
+            local result = workspace:Raycast(origin, direction, rayParams)
+            if result and result.Instance and result.Instance:IsA("BasePart") and not result.Instance:IsDescendantOf(target.Character) then
+                local headPart = target.Character:FindFirstChild("Head")
+                if headPart and finalPart ~= headPart then
+                    finalPart = headPart
+                end
+            end
+        end
+        local targetPos = finalPart.Position
+        local hrp = target.Character:FindFirstChild("HumanoidRootPart")
+        if hrp and getgenv().AimbotSettings.Prediction ~= "Off" then
+            local mult = (getgenv().AimbotSettings.Prediction == "Low" and 0.06)
+                or (getgenv().AimbotSettings.Prediction == "Medium" and 0.11)
+                or (getgenv().AimbotSettings.Prediction == "High" and 0.2)
+                or 0
+            targetPos = targetPos + hrp.Velocity * mult
+        end
+        local camCF = Camera.CFrame
+        local wanted = CFrame.new(camCF.Position, targetPos)
+        Camera.CFrame = camCF:Lerp(wanted, smoothingFactorFromSetting())
+    end)
+    table.insert(getgenv().Connections, aimConn)
+
+    -- ======= Circle Tab =======
     local mainCircle = nil
     local circleConn = nil
-    if not isMobile then
-        local success, err = pcall(function()
-            CircleTab:CreateSection("Circle Settings")
-            CircleTab:CreateSlider({
-                Name = "FOV",
-                Range = {50, 500},
-                Increment = 10,
-                CurrentValue = getgenv().CircleSettings.FOV,
-                Callback = function(v) getgenv().CircleSettings.FOV = v end
-            })
-            CircleTab:CreateColorPicker({
-                Name = "Circle Color",
-                Color = getgenv().CircleSettings.Color,
-                Callback = function(v)
-                    local success, err = pcall(function()
-                        getgenv().CircleSettings.Color = v
-                    end)
-                    if not success then
-                        warn("Circle Color Picker failed: " .. tostring(err))
-                    end
+    local success, err = pcall(function()
+        CircleTab:CreateSection("Circle Settings")
+        CircleTab:CreateSlider({
+            Name = "FOV",
+            Range = {50, 500},
+            Increment = 10,
+            CurrentValue = getgenv().CircleSettings.FOV,
+            Callback = function(v) getgenv().CircleSettings.FOV = v end
+        })
+        CircleTab:CreateColorPicker({
+            Name = "Circle Color",
+            Color = getgenv().CircleSettings.Color,
+            Callback = function(v)
+                local success, err = pcall(function()
+                    getgenv().CircleSettings.Color = v
+                end)
+                if not success then
+                    warn("Circle Color Picker failed: " .. tostring(err))
                 end
-            })
-            CircleTab:CreateToggle({
-                Name = "Rainbow Circle",
-                CurrentValue = getgenv().CircleSettings.Rainbow,
-                Callback = function(v) getgenv().CircleSettings.Rainbow = v end
-            })
-            CircleTab:CreateSlider({
-                Name = "Thickness",
-                Range = {1, 10},
-                Increment = 1,
-                CurrentValue = getgenv().CircleSettings.Thickness,
-                Callback = function(v) getgenv().CircleSettings.Thickness = v end
-            })
-            CircleTab:CreateSlider({
-                Name = "Rainbow Speed",
-                Range = {1, 3},
-                Increment = 1,
-                CurrentValue = getgenv().CircleSettings.RainbowSpeed,
-                Callback = function(v) getgenv().CircleSettings.RainbowSpeed = v end
-            })
-            CircleTab:CreateToggle({
-                Name = "Show Circle",
-                CurrentValue = getgenv().CircleSettings.Visible,
-                Callback = function(v)
-                    getgenv().CircleSettings.Visible = v
-                    if mainCircle then pcall(function() mainCircle.Visible = v end) end
-                end
-            })
-        end)
-        if not success then
-            warn("CircleTab creation failed: " .. tostring(err))
-            if not getgenv().MiscSettings.DisableNotifications then
-                Rayfield:Notify({
-                    Title = "Valox Hub Error",
-                    Content = "Failed to create Circle tab: " .. tostring(err),
-                    Duration = 5
-                })
             end
+        })
+        CircleTab:CreateToggle({
+            Name = "Rainbow Circle",
+            CurrentValue = getgenv().CircleSettings.Rainbow,
+            Callback = function(v) getgenv().CircleSettings.Rainbow = v end
+        })
+        CircleTab:CreateSlider({
+            Name = "Thickness",
+            Range = {1, 10},
+            Increment = 1,
+            CurrentValue = getgenv().CircleSettings.Thickness,
+            Callback = function(v) getgenv().CircleSettings.Thickness = v end
+        })
+        CircleTab:CreateSlider({
+            Name = "Rainbow Speed",
+            Range = {1, 3},
+            Increment = 1,
+            CurrentValue = getgenv().CircleSettings.RainbowSpeed,
+            Callback = function(v) getgenv().CircleSettings.RainbowSpeed = v end
+        })
+        CircleTab:CreateToggle({
+            Name = "Show Circle",
+            CurrentValue = getgenv().CircleSettings.Visible,
+            Callback = function(v)
+                getgenv().CircleSettings.Visible = v
+                if mainCircle then pcall(function() mainCircle.Visible = v end) end
+            end
+        })
+    end)
+    if not success then
+        warn("CircleTab creation failed: " .. tostring(err))
+        if not getgenv().MiscSettings.DisableNotifications then
+            Rayfield:Notify({
+                Title = "Valox Hub Error",
+                Content = "Failed to create Circle tab: " .. tostring(err),
+                Duration = 5
+            })
         end
-
-        local function CreateMainCircle()
-            DestroyAllCircles()
-            local m = UserInputService:GetMouseLocation()
-            local c = Drawing.new("Circle")
-            c.NumSides = 100
-            c.Filled = false
-            c.Visible = getgenv().CircleSettings.Visible
-            c.Thickness = getgenv().CircleSettings.Thickness
-            c.Radius = getgenv().CircleSettings.FOV
-            c.Position = Vector2.new(m.X, m.Y)
-            c.Color = getgenv().CircleSettings.Color
-            table.insert(getgenv().ActiveCircles, c)
-            return c
-        end
-
-        mainCircle = CreateMainCircle()
-        circleConn = RunService.RenderStepped:Connect(function()
-            if not mainCircle then return end
-            local m = UserInputService:GetMouseLocation()
-            pcall(function()
-                mainCircle.Position = Vector2.new(m.X, m.Y)
-                mainCircle.Radius = getgenv().CircleSettings.FOV
-                mainCircle.Thickness = getgenv().CircleSettings.Thickness
-                mainCircle.Visible = getgenv().CircleSettings.Visible
-                if getgenv().CircleSettings.Rainbow then
-                    local time = tick() * getgenv().CircleSettings.RainbowSpeed
-                    mainCircle.Color = Color3.fromHSV(time % 1, 1, 1)
-                else
-                    mainCircle.Color = getgenv().CircleSettings.Color
-                end
-            end)
-        end)
-        table.insert(getgenv().Connections, circleConn)
     end
+
+    local function CreateMainCircle()
+        DestroyAllCircles()
+        local m = UserInputService:GetMouseLocation()
+        local c = Drawing.new("Circle")
+        c.NumSides = 100
+        c.Filled = false
+        c.Visible = getgenv().CircleSettings.Visible
+        c.Thickness = getgenv().CircleSettings.Thickness
+        c.Radius = getgenv().CircleSettings.FOV
+        c.Position = Vector2.new(m.X, m.Y)
+        c.Color = getgenv().CircleSettings.Color
+        table.insert(getgenv().ActiveCircles, c)
+        return c
+    end
+
+    mainCircle = CreateMainCircle()
+    circleConn = RunService.RenderStepped:Connect(function()
+        if not mainCircle then return end
+        local m = UserInputService:GetMouseLocation()
+        pcall(function()
+            mainCircle.Position = Vector2.new(m.X, m.Y)
+            mainCircle.Radius = getgenv().CircleSettings.FOV
+            mainCircle.Thickness = getgenv().CircleSettings.Thickness
+            mainCircle.Visible = getgenv().CircleSettings.Visible
+            if getgenv().CircleSettings.Rainbow then
+                local time = tick() * getgenv().CircleSettings.RainbowSpeed
+                mainCircle.Color = Color3.fromHSV(time % 1, 1, 1)
+            else
+                mainCircle.Color = getgenv().CircleSettings.Color
+            end
+        end)
+    end)
+    table.insert(getgenv().Connections, circleConn)
 
     -- ======= ESP Tab =======
     local success, err = pcall(function()
